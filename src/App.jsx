@@ -29,7 +29,9 @@ import {
   XCircle,
   Clock,
   RotateCcw,
-} from 'lucide-react'; // Added RotateCcw for "Again" button
+  CalendarDays,
+  AlertCircle,
+} from 'lucide-react'; // Added CalendarDays and AlertCircle for date visualization
 
 // Main App Component
 const App = () => {
@@ -43,7 +45,7 @@ const App = () => {
   const [cards, setCards] = useState([]); // 'cards' state already holds cards for the selected deck
   const [newDeckName, setNewDeckName] = useState('');
   const [newCardFront, setNewCardFront] = useState('');
-  const [newCardBack, setNewCardBack] = useState('');
+  const [newCardBack, setNewCardBack] = useState(''); // Initialized to empty string
   const [isAddingDeck, setIsAddingDeck] = useState(false);
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
@@ -58,6 +60,10 @@ const App = () => {
   const [reviewMode, setReviewMode] = useState(false);
   const [reviewCards, setReviewCards] = useState([]);
   const [currentReviewCardIndex, setCurrentReviewCardIndex] = useState(0);
+
+  // New state variables for user progress tracking
+  const [dueCardsCount, setDueCardsCount] = useState(0);
+  const [learnedCardsCount, setLearnedCardsCount] = useState(0);
 
   // --- IMPORTANT: Firebase project configuration ---
   // For local development, Firebase config is read from environment variables.
@@ -127,7 +133,7 @@ const App = () => {
             value !== undefined &&
             value !== null &&
             value !== '' &&
-            !value.startsWith('YOUR_')
+            !String(value).startsWith('YOUR_')
         );
 
         if (
@@ -285,6 +291,32 @@ const App = () => {
       setCards([]);
     }
   }, [db, userId, selectedDeck]);
+
+  // Effect to calculate and update user progress metrics (due cards, learned cards)
+  useEffect(() => {
+    if (cards.length > 0) {
+      const currentTime = new Date(); // Get current time precisely
+
+      // A card is "due today" (meaning, ready to be reviewed now) if its nextReviewDate
+      // is less than or equal to the current precise time.
+      const dueToday = cards.filter((card) => {
+        const nextReview = new Date(card.nextReviewDate);
+        return nextReview <= currentTime;
+      }).length;
+
+      const learned = cards.filter((card) => card.repetitions > 0).length; // Cards with at least one successful repetition
+
+      setDueCardsCount(dueToday);
+      setLearnedCardsCount(learned);
+      console.log(
+        `Progress Update: Due Today: ${dueToday}, Cards Learned: ${learned}`
+      );
+    } else {
+      setDueCardsCount(0);
+      setLearnedCardsCount(0);
+      console.log('Progress Update: No cards, counts reset to 0.');
+    }
+  }, [cards]); // Recalculate whenever the 'cards' state changes
 
   // Function to add a new deck to Firestore
   const addDeck = async () => {
@@ -551,6 +583,7 @@ const App = () => {
 
   // Function to prepare cards for a review session
   const startReviewSession = () => {
+    console.log('Attempting to start review session.');
     if (!selectedDeck || cards.length === 0) {
       console.log('No cards in this deck to review or no deck selected.');
       return;
@@ -568,12 +601,22 @@ const App = () => {
       (a, b) => new Date(a.nextReviewDate) - new Date(b.nextReviewDate)
     );
 
+    console.log(
+      'Due cards found for review session:',
+      dueCards.length,
+      dueCards
+    );
+
     if (dueCards.length === 0) {
       console.log('No cards due for review in this deck.');
       // Optionally, show a message to the user that no cards are due
       return;
     }
 
+    console.log(
+      'Setting reviewMode to true, currentReviewCardIndex to 0, reviewCards array:',
+      dueCards
+    );
     setReviewCards(dueCards);
     setCurrentReviewCardIndex(0);
     setReviewMode(true);
@@ -622,6 +665,12 @@ const App = () => {
       nextReviewDate.setDate(nextReviewDate.getDate() + interval);
     }
 
+    console.log(
+      `Calculated next review for card "${
+        card.front
+      }": repetitions=${repetitions}, interval=${interval}, easeFactor=${easeFactor}, nextReviewDate=${nextReviewDate.toISOString()}`
+    );
+
     return {
       repetitions,
       interval,
@@ -632,6 +681,19 @@ const App = () => {
 
   // Function to handle a card review (called by Flashcard component)
   const handleReview = async (card, quality) => {
+    console.log(
+      'Handling review for card:',
+      card.front,
+      'with quality:',
+      quality
+    );
+    console.log(
+      'Current index:',
+      currentReviewCardIndex,
+      'Total review cards:',
+      reviewCards.length
+    );
+
     if (!db || !userId || !selectedDeck || !window.currentAppId) return;
 
     const updatedCardData = calculateNextReview(card, quality);
@@ -652,6 +714,7 @@ const App = () => {
         setCurrentReviewCardIndex((prevIndex) => prevIndex + 1);
       } else {
         // End of review session
+        console.log('Last card reviewed. Ending session.');
         setReviewMode(false);
         setReviewCards([]);
         setCurrentReviewCardIndex(0);
@@ -806,6 +869,36 @@ const App = () => {
                   </button>
                 )}
               </h2>
+
+              {/* User Progress Metrics for the selected deck */}
+              {!reviewMode && (
+                <div className='flex justify-around items-center bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-6 shadow-inner'>
+                  <div className='text-center'>
+                    <p className='text-xl font-bold text-indigo-600 dark:text-indigo-300'>
+                      {selectedDeck.cardCount || 0}
+                    </p>
+                    <p className='text-sm text-gray-600 dark:text-gray-400'>
+                      Total Cards
+                    </p>
+                  </div>
+                  <div className='text-center'>
+                    <p className='text-xl font-bold text-red-600 dark:text-red-300'>
+                      {dueCardsCount}
+                    </p>
+                    <p className='text-sm text-gray-600 dark:text-gray-400'>
+                      Due Today
+                    </p>
+                  </div>
+                  <div className='text-center'>
+                    <p className='text-xl font-bold text-green-600 dark:text-green-300'>
+                      {learnedCardsCount}
+                    </p>
+                    <p className='text-sm text-gray-600 dark:text-gray-400'>
+                      Cards Learned
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Add/Edit Card Modal/Form */}
               {(isAddingCard || editingCard) && (
@@ -1042,8 +1135,16 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
     setIsFlipped(false);
   }, [card.id]);
 
+  // Modified formatNextReviewDate to return status and icon
   const formatNextReviewDate = (isoString) => {
-    if (!isoString) return 'N/A';
+    if (!isoString)
+      return {
+        text: 'N/A',
+        status: 'none',
+        icon: null,
+        colorClass: 'text-gray-500',
+      };
+
     const date = new Date(isoString);
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize today's date to start of day
@@ -1057,23 +1158,58 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
     const cardDate = new Date(date);
     cardDate.setHours(0, 0, 0, 0); // Normalize card date to start of day
 
-    if (cardDate.getTime() === today.getTime()) {
-      return 'Today';
+    const currentTime = new Date(); // Get current time for precise overdue check
+
+    if (date <= currentTime) {
+      // Card is due right now or overdue
+      return {
+        text: 'Due Now',
+        status: 'due',
+        icon: AlertCircle,
+        colorClass: 'text-red-500 dark:text-red-400',
+      };
+    } else if (cardDate.getTime() === today.getTime()) {
+      return {
+        text: 'Today',
+        status: 'today',
+        icon: Clock,
+        colorClass: 'text-orange-500 dark:text-orange-400',
+      };
     } else if (cardDate.getTime() === tomorrow.getTime()) {
-      return 'Tomorrow';
-    } else if (cardDate.getTime() < today.getTime()) {
-      return 'Overdue';
+      return {
+        text: 'Tomorrow',
+        status: 'tomorrow',
+        icon: CalendarDays,
+        colorClass: 'text-yellow-500 dark:text-yellow-400',
+      };
     } else if (cardDate.getTime() === dayAfterTomorrow.getTime()) {
-      return 'Day after tomorrow';
+      return {
+        text: 'Day after tomorrow',
+        status: 'upcoming_soon',
+        icon: CalendarDays,
+        colorClass: 'text-yellow-500 dark:text-yellow-400',
+      };
     } else {
       // For future dates, format nicely
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+      return {
+        text: date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+        status: 'future',
+        icon: CalendarDays,
+        colorClass: 'text-green-500 dark:text-green-400',
+      };
     }
   };
+
+  const {
+    text: reviewDateText,
+    status: reviewDateStatus,
+    icon: ReviewIcon,
+    colorClass: reviewDateColorClass,
+  } = formatNextReviewDate(card.nextReviewDate);
 
   return (
     <div
@@ -1161,8 +1297,11 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
         )}
       {!isReviewMode &&
         card.nextReviewDate && ( // Show next review date in list view
-          <div className='absolute bottom-3 left-3 text-xs text-gray-500 dark:text-gray-400'>
-            Next Review: {formatNextReviewDate(card.nextReviewDate)}
+          <div
+            className={`absolute bottom-3 left-3 text-xs flex items-center ${reviewDateColorClass}`}
+          >
+            {ReviewIcon && <ReviewIcon className='h-3 w-3 mr-1' />}
+            Next Review: {reviewDateText}
           </div>
         )}
     </div>
