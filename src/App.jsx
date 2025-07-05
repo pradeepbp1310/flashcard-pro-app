@@ -20,7 +20,8 @@ import {
   deleteDoc,
   updateDoc,
   getDoc,
-} from 'firebase/firestore';
+  getDocs,
+} from 'firebase/firestore'; // Added getDocs
 import {
   PlusCircle,
   Brain,
@@ -38,7 +39,22 @@ import {
   LogIn,
   UserPlus,
   LogOut,
-} from 'lucide-react';
+  CheckSquare,
+  Layers,
+  Code,
+  Database,
+  Zap,
+  Sparkles,
+  TrendingUp,
+  FolderDot,
+  User,
+  Share2,
+  Settings,
+  FileText,
+  Lightbulb,
+  Compass,
+  Type,
+} from 'lucide-react'; // Added new icons
 
 // --- Main App Component ---
 const App = () => {
@@ -51,8 +67,8 @@ const App = () => {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [cards, setCards] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
-  const [newCardFront, setNewCardFront] = useState('');
-  const [newCardBack, setNewCardBack] = useState('');
+  const [newCardFront, setNewCardFront] = '';
+  const [newCardBack, setNewCardBack] = '';
   const [isAddingDeck, setIsAddingDeck] = useState(false);
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
@@ -60,7 +76,7 @@ const App = () => {
 
   // New state variables for AI content generation input
   const [aiSubject, setAiSubject] = useState('');
-  const [aiRelatedTopics, setAiRelatedTopics] = useState('');
+  const [aiRelatedTopics, setAiRelatedTopics] = '';
   const [numberOfCardsToGenerate, setNumberOfCardsToGenerate] = useState(1);
 
   // Spaced Repetition / Review Session States
@@ -83,6 +99,8 @@ const App = () => {
   // New state for current page/view (for routing/conditional rendering)
   const [currentPage, setCurrentPage] = useState('home');
   const [authError, setAuthError] = useState('');
+  const [showDeleteDeckConfirm, setShowDeleteDeckConfirm] = useState(false);
+  const [deckToDelete, setDeckToDelete] = useState(null);
 
   // --- IMPORTANT: Firebase project configuration ---
   const localFirebaseConfig = {
@@ -457,6 +475,38 @@ const App = () => {
       console.error('Error adding document: ', e);
       setAuthError(`Error adding deck: ${e.message}`);
       setIsAddingDeck(false); // Close modal on error
+    }
+  };
+
+  // Function to delete a deck from Firestore
+  const deleteDeck = async (deckId) => {
+    if (!db || !userId || !window.currentAppId) return;
+    try {
+      // First, delete all cards within the deck
+      const cardsCollectionRef = collection(
+        db,
+        `artifacts/${window.currentAppId}/users/${userId}/decks/${deckId}/cards`
+      );
+      const cardsSnapshot = await getDocs(query(cardsCollectionRef));
+      const deleteCardPromises = cardsSnapshot.docs.map((cardDoc) =>
+        deleteDoc(cardDoc.ref)
+      );
+      await Promise.all(deleteCardPromises);
+
+      // Then, delete the deck itself
+      await deleteDoc(
+        doc(
+          db,
+          `artifacts/${window.currentAppId}/users/${userId}/decks`,
+          deckId
+        )
+      );
+      setSelectedDeck(null); // Deselect the deck if it was the one being viewed
+      setShowDeleteDeckConfirm(false); // Close confirmation modal
+      setDeckToDelete(null); // Clear deck to delete state
+      console.log('Deck and its cards deleted successfully!');
+    } catch (e) {
+      console.error('Error deleting deck: ', e);
     }
   };
 
@@ -1011,7 +1061,7 @@ const App = () => {
         </div>
       )}
 
-      {/* Add New Deck Modal/Form - RE-ADDED */}
+      {/* Add New Deck Modal/Form */}
       {isAddingDeck && (
         <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
           <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
@@ -1041,6 +1091,40 @@ const App = () => {
                 className='px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors'
               >
                 Create Deck
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Deck Confirmation Modal */}
+      {showDeleteDeckConfirm && deckToDelete && (
+        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
+          <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
+            <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+              Confirm Deletion
+            </h2>
+            <p className='text-gray-700 dark:text-gray-300 mb-6'>
+              Are you sure you want to delete the deck "
+              <span className='font-bold'>{deckToDelete.name}</span>"? This
+              action cannot be undone and will delete all cards within this
+              deck.
+            </p>
+            <div className='flex justify-end space-x-3'>
+              <button
+                onClick={() => {
+                  setShowDeleteDeckConfirm(false);
+                  setDeckToDelete(null);
+                }}
+                className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteDeck(deckToDelete.id)}
+                className='px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors'
+              >
+                Delete
               </button>
             </div>
           </div>
@@ -1141,30 +1225,46 @@ const App = () => {
                     )}
                     {decks.length === 0 ? (
                       <p className='text-gray-600 dark:text-gray-400'>
-                        No decks yet.
+                        No decks yet. Add one to get started!
                       </p>
                     ) : (
                       <ul className='space-y-3'>
                         {decks.map((deck) => (
-                          <li key={deck.id}>
+                          <li
+                            key={deck.id}
+                            className='flex items-center justify-between'
+                          >
                             <button
                               onClick={() => {
                                 setSelectedDeck(deck);
                                 setReviewMode(false);
                               }}
-                              className={`w-full text-left px-4 py-3 rounded-lg flex items-center justify-between
+                              className={`flex-grow text-left px-4 py-3 rounded-l-lg
                                 ${
                                   selectedDeck?.id === deck.id
                                     ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold'
                                     : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
                                 }
-                                transition-colors duration-200 transform hover:scale-[1.02]`}
+                                transition-colors duration-200 transform hover:scale-[1.02] origin-left`}
                             >
                               <span>{deck.name}</span>
-                              <span className='text-sm text-gray-500 dark:text-gray-400'>
+                              <span className='text-sm text-gray-500 dark:text-gray-400 ml-2'>
                                 ({deck.cardCount || 0} cards)
                               </span>
                             </button>
+                            {userId && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeckToDelete(deck);
+                                  setShowDeleteDeckConfirm(true);
+                                }}
+                                className='p-3 bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-200 rounded-r-lg hover:bg-red-200 dark:hover:bg-red-700 transition-colors transform hover:scale-[1.02] origin-right'
+                                title='Delete Deck'
+                              >
+                                <Trash2 className='h-5 w-5' />
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -1212,7 +1312,8 @@ const App = () => {
                               }}
                               className='flex items-center px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm'
                             >
-                              <XCircle className='mr-2 h-4 w-4' /> End Review
+                              <XCircle className='mr-2 h-4 w-4 inline-block' />{' '}
+                              End Review
                             </button>
                           )}
                         </h2>
@@ -1481,7 +1582,6 @@ const App = () => {
         <p>
           &copy; {new Date().getFullYear()} Flashcard Pro. All rights reserved.
         </p>
-        <p>Built with React, Tailwind CSS, and Firebase.</p>
       </footer>
     </div>
   );
@@ -1491,59 +1591,170 @@ const App = () => {
 const HomePage = () => {
   return (
     <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 text-center'>
-      <h2 className='text-3xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
-        Welcome to Flashcard Pro!
-      </h2>
-      <p className='text-lg text-gray-700 dark:text-gray-300 mb-6'>
-        Your ultimate tool for enhanced learning and knowledge retention.
-      </p>
-      <div className='grid grid-cols-1 md:grid-cols-2 gap-6 text-left'>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner'>
-          <h3 className='text-xl font-bold text-indigo-600 dark:text-indigo-300 mb-2'>
-            📚 Deck & Card Management
-          </h3>
+      {/* Hero Section */}
+      <div className='bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl p-8 mb-8 shadow-xl'>
+        <h2 className='text-4xl md:text-5xl font-extrabold mb-4 leading-tight'>
+          Master Anything with Flashcard Pro!
+        </h2>
+        <p className='text-lg md:text-xl mb-6 opacity-90'>
+          Your intelligent companion for effective learning and lasting memory.
+        </p>
+        <div className='flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4'>
+          <a
+            href='#get-started' // Scroll to "Ready to start learning?" section
+            className='inline-flex items-center px-6 py-3 bg-white text-indigo-700 font-bold rounded-lg shadow-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105'
+            onClick={(e) => {
+              e.preventDefault();
+              document
+                .getElementById('get-started')
+                .scrollIntoView({ behavior: 'smooth' });
+            }}
+          >
+            <PlayCircle className='mr-2 h-6 w-6' /> Get Started Now
+          </a>
+        </div>
+      </div>
+
+      <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8'>
+        Why Choose Flashcard Pro?
+      </h3>
+
+      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left mb-12'>
+        {/* Feature 1: Spaced Repetition */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <Brain className='text-blue-600 dark:text-blue-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-blue-600 dark:text-blue-300 mb-2'>
+            Smart Learning with SRS
+          </h4>
           <p className='text-gray-800 dark:text-gray-200'>
-            Create, organize, and manage your flashcard decks. Add questions and
-            answers to build your personalized learning library.
+            Utilize the proven SM-2 spaced repetition algorithm to review cards
+            at optimal intervals, maximizing retention and minimizing study
+            time.
           </p>
         </div>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner'>
-          <h3 className='text-xl font-bold text-blue-600 dark:text-blue-300 mb-2'>
-            🔄 Spaced Repetition System
-          </h3>
+
+        {/* Feature 2: AI Content Generation */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <Sparkles className='text-purple-600 dark:text-purple-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-purple-600 dark:text-purple-300 mb-2'>
+            AI-Powered Card Creation
+          </h4>
           <p className='text-gray-800 dark:text-gray-200'>
-            Leverage the power of the SM-2 algorithm to optimize your review
-            schedule, ensuring you review cards at the most effective times for
-            long-term memory.
+            Effortlessly generate flashcard questions and answers on any subject
+            with our integrated Google Gemini AI, saving you time and boosting
+            creativity.
           </p>
         </div>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner'>
-          <h3 className='text-xl font-bold text-purple-600 dark:text-purple-300 mb-2'>
-            🧠 AI Content Generation
-          </h3>
+
+        {/* Feature 3: Organized Deck & Card Management */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <FolderDot className='text-green-600 dark:text-green-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-green-600 dark:text-green-300 mb-2'>
+            Intuitive Organization
+          </h4>
           <p className='text-gray-800 dark:text-gray-200'>
-            Stuck on creating content? Our integrated AI can generate flashcard
-            questions and answers for you based on a subject and related topics.
+            Create, manage, and categorize your flashcards into custom decks,
+            keeping your study materials perfectly organized and accessible.
           </p>
         </div>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner'>
-          <h3 className='text-xl font-bold text-green-600 dark:text-green-300 mb-2'>
-            📊 Progress Tracking
-          </h3>
+
+        {/* Feature 4: Progress Tracking */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <TrendingUp className='text-orange-600 dark:text-orange-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-orange-600 dark:text-orange-300 mb-2'>
+            Track Your Growth
+          </h4>
           <p className='text-gray-800 dark:text-gray-200'>
-            Keep track of your learning journey with a dedicated dashboard
-            showing your total cards, cards due, and learned cards across all
-            your decks.
+            Monitor your learning progress with real-time statistics, including
+            total decks, cards, and cards due, helping you stay motivated.
+          </p>
+        </div>
+
+        {/* Feature 5: Responsive & Real-time */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <Zap className='text-red-600 dark:text-red-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-red-600 dark:text-red-300 mb-2'>
+            Seamless & Responsive
+          </h4>
+          <p className='text-gray-800 dark:text-gray-200'>
+            Enjoy a fluid experience on any device with our responsive design
+            and real-time data synchronization powered by Firebase.
+          </p>
+        </div>
+
+        {/* Feature 6: Secure & Reliable */}
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
+          <User className='text-indigo-600 dark:text-indigo-300 mb-4 h-12 w-12' />
+          <h4 className='text-xl font-bold text-indigo-600 dark:text-indigo-300 mb-2'>
+            Secure User Experience
+          </h4>
+          <p className='text-gray-800 dark:text-gray-200'>
+            Your data is safe with robust Firebase Authentication and Firestore,
+            ensuring a secure and reliable learning environment.
           </p>
         </div>
       </div>
-      <p className='mt-8 text-lg text-gray-700 dark:text-gray-300'>
-        Ready to start learning?{' '}
-        <span className='font-bold text-indigo-600 dark:text-indigo-400'>
-          Login or Sign Up
-        </span>{' '}
-        to create your first deck!
-      </p>
+
+      <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8'>
+        What's Next for Flashcard Pro?
+      </h3>
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-6 text-left mb-12'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner flex items-start'>
+          <Sparkles className='text-purple-500 mr-3 mt-1 h-6 w-6 flex-shrink-0' />
+          <div>
+            <h4 className='text-xl font-bold text-purple-500 mb-2'>
+              Enhanced AI Capabilities
+            </h4>
+            <ul className='list-inside text-gray-800 dark:text-gray-200 space-y-1'>
+              <li>
+                <Lightbulb className='inline-block h-4 w-4 mr-1' /> Smart
+                Suggestions - AI-driven hints for card answers during creation.
+              </li>
+              <li>
+                <FileText className='inline-block h-4 w-4 mr-1' /> Content
+                Summarization - Generate concise flashcards from longer texts.
+              </li>
+              <li>
+                <Compass className='inline-block h-4 w-4 mr-1' /> Adaptive
+                Learning Paths - AI-powered personalized study recommendations.
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner flex items-start'>
+          <Settings className='text-orange-500 mr-3 mt-1 h-6 w-6 flex-shrink-0' />
+          <div>
+            <h4 className='text-xl font-bold text-orange-500 mb-2'>
+              Prospective Enhancements
+            </h4>
+            <ul className='list-inside text-gray-800 dark:text-gray-200 space-y-1'>
+              <li>
+                <FileText className='inline-block h-4 w-4 mr-1' /> Deck
+                Import/Export - Share and backup your decks easily.
+              </li>
+              <li>
+                <Share2 className='inline-block h-4 w-4 mr-1' /> Deck Sharing -
+                Collaborate or share knowledge with others.
+              </li>
+              <li>
+                <Type className='inline-block h-4 w-4 mr-1' /> Rich Text Editor
+                - Format card content with bold, italics, and more.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id='get-started'
+        className='mt-8 text-lg text-gray-700 dark:text-gray-300'
+      >
+        <p className='mb-4'>Ready to revolutionize your learning journey?</p>
+        <p className='font-bold text-indigo-600 dark:text-indigo-400'>
+          Login or Sign Up to create your first deck and experience the power of
+          Flashcard Pro!
+        </p>
+      </div>
     </section>
   );
 };
@@ -1695,6 +1906,13 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
       return {
         text: 'Tomorrow',
         status: 'tomorrow',
+        icon: CalendarDays,
+        colorClass: 'text-yellow-500 dark:text-yellow-400',
+      };
+    } else if (cardDate.getTime() === dayAfterTomorrow.getTime()) {
+      return {
+        text: 'Day after tomorrow',
+        status: 'upcoming_soon',
         icon: CalendarDays,
         colorClass: 'text-yellow-500 dark:text-yellow-400',
       };
