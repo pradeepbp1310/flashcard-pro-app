@@ -31,7 +31,8 @@ import {
   RotateCcw,
   CalendarDays,
   AlertCircle,
-} from 'lucide-react'; // Added CalendarDays and AlertCircle for date visualization
+  LayoutDashboard,
+} from 'lucide-react'; // Added CalendarDays, AlertCircle, LayoutDashboard for date visualization and dashboard icon
 
 // Main App Component
 const App = () => {
@@ -61,9 +62,17 @@ const App = () => {
   const [reviewCards, setReviewCards] = useState([]);
   const [currentReviewCardIndex, setCurrentReviewCardIndex] = useState(0);
 
-  // New state variables for user progress tracking
+  // New state variables for user progress tracking (per selected deck)
   const [dueCardsCount, setDueCardsCount] = useState(0);
   const [learnedCardsCount, setLearnedCardsCount] = useState(0);
+
+  // New state variables for overall app progress (for Dashboard)
+  const [showDashboard, setShowDashboard] = useState(false); // Controls dashboard visibility
+  const [allDeckCards, setAllDeckCards] = useState({}); // Stores cards for all decks: {deckId: [card1, card2], ...}
+  const [totalDecksOverall, setTotalDecksOverall] = useState(0);
+  const [totalCardsOverall, setTotalCardsOverall] = useState(0);
+  const [totalDueCardsOverall, setTotalDueCardsOverall] = useState(0);
+  const [totalLearnedCardsOverall, setTotalLearnedCardsOverall] = useState(0);
 
   // --- IMPORTANT: Firebase project configuration ---
   // For local development, Firebase config is read from environment variables.
@@ -292,7 +301,7 @@ const App = () => {
     }
   }, [db, userId, selectedDeck]);
 
-  // Effect to calculate and update user progress metrics (due cards, learned cards)
+  // Effect to calculate and update user progress metrics (per selected deck)
   useEffect(() => {
     if (cards.length > 0) {
       const currentTime = new Date(); // Get current time precisely
@@ -309,14 +318,85 @@ const App = () => {
       setDueCardsCount(dueToday);
       setLearnedCardsCount(learned);
       console.log(
-        `Progress Update: Due Today: ${dueToday}, Cards Learned: ${learned}`
+        `Progress Update (Selected Deck): Due Today: ${dueToday}, Cards Learned: ${learned}`
       );
     } else {
       setDueCardsCount(0);
       setLearnedCardsCount(0);
-      console.log('Progress Update: No cards, counts reset to 0.');
+      console.log(
+        'Progress Update (Selected Deck): No cards, counts reset to 0.'
+      );
     }
   }, [cards]); // Recalculate whenever the 'cards' state changes
+
+  // NEW EFFECT: Fetch all cards for overall dashboard statistics
+  useEffect(() => {
+    if (db && userId && window.currentAppId && decks.length > 0) {
+      const unsubscribeListeners = [];
+      const newAllDeckCards = {};
+      let allCardsArray = []; // To accumulate all cards for overall counts
+
+      // Sum total decks and total cards from existing decks state
+      setTotalDecksOverall(decks.length);
+      setTotalCardsOverall(
+        decks.reduce((sum, deck) => sum + (deck.cardCount || 0), 0)
+      );
+
+      decks.forEach((deck) => {
+        const cardsCollectionRef = collection(
+          db,
+          `artifacts/${window.currentAppId}/users/${userId}/decks/${deck.id}/cards`
+        );
+        const q = query(cardsCollectionRef);
+
+        const unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const fetchedCardsForDeck = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }));
+            newAllDeckCards[deck.id] = fetchedCardsForDeck; // Update specific deck's cards
+            setAllDeckCards({ ...newAllDeckCards }); // Trigger re-render for allDeckCards
+
+            // Recalculate overall due and learned cards whenever any deck's cards change
+            const currentAllCards = Object.values(newAllDeckCards).flat();
+            const currentTime = new Date();
+
+            const overallDue = currentAllCards.filter((card) => {
+              const nextReview = new Date(card.nextReviewDate);
+              return nextReview <= currentTime;
+            }).length;
+
+            const overallLearned = currentAllCards.filter(
+              (card) => card.repetitions > 0
+            ).length;
+
+            setTotalDueCardsOverall(overallDue);
+            setTotalLearnedCardsOverall(overallLearned);
+            console.log(
+              `Overall Progress Update: Total Due: ${overallDue}, Total Learned: ${overallLearned}`
+            );
+          },
+          (error) => {
+            console.error(`Error fetching cards for deck ${deck.id}:`, error);
+          }
+        );
+        unsubscribeListeners.push(unsubscribe);
+      });
+
+      return () => {
+        unsubscribeListeners.forEach((unsubscribe) => unsubscribe());
+      };
+    } else if (decks.length === 0) {
+      // Reset overall stats if no decks exist
+      setAllDeckCards({});
+      setTotalDecksOverall(0);
+      setTotalCardsOverall(0);
+      setTotalDueCardsOverall(0);
+      setTotalLearnedCardsOverall(0);
+    }
+  }, [db, userId, decks]); // Depend on decks to re-run when decks are added/removed
 
   // Function to add a new deck to Firestore
   const addDeck = async () => {
@@ -694,6 +774,19 @@ const App = () => {
       reviewCards.length
     );
 
+    console.log(
+      'Handling review for card:',
+      card.front,
+      'with quality:',
+      quality
+    );
+    console.log(
+      'Current index:',
+      currentReviewCardIndex,
+      'Total review cards:',
+      reviewCards.length
+    );
+
     if (!db || !userId || !selectedDeck || !window.currentAppId) return;
 
     const updatedCardData = calculateNextReview(card, quality);
@@ -747,13 +840,37 @@ const App = () => {
         <h1 className='text-3xl sm:text-4xl font-bold text-indigo-700 dark:text-indigo-400 mb-4 sm:mb-0'>
           Flashcard Pro
         </h1>
-        {/* Button to open the "Add New Deck" modal */}
-        <button
-          onClick={() => setIsAddingDeck(true)}
-          className='flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-300 transform hover:scale-105'
-        >
-          <PlusCircle className='mr-2 h-5 w-5' /> Add New Deck
-        </button>
+        <div className='flex space-x-3'>
+          {/* Dashboard Button */}
+          <button
+            onClick={() => {
+              setShowDashboard(true);
+              setSelectedDeck(null);
+              setReviewMode(false);
+            }}
+            className='flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition-colors duration-300 transform hover:scale-105'
+          >
+            <LayoutDashboard className='mr-2 h-5 w-5' /> Dashboard
+          </button>
+          {/* Decks Button (visible when on dashboard) */}
+          {showDashboard && (
+            <button
+              onClick={() => setShowDashboard(false)}
+              className='flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-300 transform hover:scale-105'
+            >
+              <BookOpen className='mr-2 h-5 w-5' /> Your Decks
+            </button>
+          )}
+          {/* Add New Deck Button (visible when not on dashboard) */}
+          {!showDashboard && (
+            <button
+              onClick={() => setIsAddingDeck(true)}
+              className='flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-300 transform hover:scale-105'
+            >
+              <PlusCircle className='mr-2 h-5 w-5' /> Add New Deck
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Add New Deck Modal/Form */}
@@ -788,331 +905,385 @@ const App = () => {
         </div>
       )}
 
-      {/* Main Content Area - Grid Layout */}
+      {/* Main Content Area - Conditional Rendering */}
       <main className='w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8'>
-        {/* Deck List Section (Left Column) */}
-        <section className='md:col-span-1 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 h-fit'>
-          <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center'>
-            <BookOpen className='mr-3 h-6 w-6 text-indigo-500' /> Your Decks
-          </h2>
-          {decks.length === 0 ? (
-            <p className='text-gray-600 dark:text-gray-400'>
-              No decks yet. Add one to get started!
-            </p>
-          ) : (
-            <ul className='space-y-3'>
-              {decks.map((deck) => (
-                <li key={deck.id}>
-                  <button
-                    onClick={() => {
-                      setSelectedDeck(deck);
-                      setReviewMode(false);
-                    }} // Select a deck, exit review mode
-                    className={`w-full text-left px-4 py-3 rounded-lg flex items-center justify-between
-                      ${
-                        selectedDeck?.id === deck.id
-                          ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold'
-                          : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
-                      }
-                      transition-colors duration-200 transform hover:scale-[1.02]`}
-                  >
-                    <span>{deck.name}</span>
-                    <span className='text-sm text-gray-500 dark:text-gray-400'>
-                      ({deck.cardCount || 0} cards)
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* Card List / Review Section (Right Column) */}
-        <section className='md:col-span-2 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6'>
-          {selectedDeck ? (
-            <>
-              <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center justify-between'>
-                <span>
-                  <Brain className='mr-3 h-6 w-6 text-indigo-500 inline-block' />
-                  {reviewMode
-                    ? `Reviewing "${selectedDeck.name}" (${
-                        currentReviewCardIndex + 1
-                      }/${reviewCards.length})`
-                    : `Cards in "${selectedDeck.name}"`}
-                </span>
-                {!reviewMode && ( // Show Add Card and Start Review buttons only if not in review mode
-                  <div className='flex space-x-3'>
-                    <button
-                      onClick={() => setIsAddingCard(true)}
-                      className='flex items-center px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm'
-                    >
-                      <PlusCircle className='mr-2 h-4 w-4' /> Add Card
-                    </button>
-                    <button
-                      onClick={startReviewSession}
-                      className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm'
-                    >
-                      <PlayCircle className='mr-2 h-4 w-4' /> Start Review
-                    </button>
-                  </div>
-                )}
-                {reviewMode && ( // Show End Review button only if in review mode
-                  <button
-                    onClick={() => {
-                      setReviewMode(false);
-                      setReviewCards([]);
-                      setCurrentReviewCardIndex(0);
-                    }}
-                    className='flex items-center px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm'
-                  >
-                    <XCircle className='mr-2 h-4 w-4' /> End Review
-                  </button>
-                )}
+        {showDashboard ? (
+          // Dashboard Section
+          <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6'>
+            <h2 className='text-3xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center'>
+              <LayoutDashboard className='mr-3 h-7 w-7 text-purple-500' />{' '}
+              Overall Dashboard
+            </h2>
+            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'>
+              <div className='bg-blue-50 dark:bg-blue-900 rounded-lg p-5 text-center shadow-md'>
+                <p className='text-4xl font-bold text-blue-600 dark:text-blue-300'>
+                  {totalDecksOverall}
+                </p>
+                <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                  Total Decks
+                </p>
+              </div>
+              <div className='bg-green-50 dark:bg-green-900 rounded-lg p-5 text-center shadow-md'>
+                <p className='text-4xl font-bold text-green-600 dark:text-green-300'>
+                  {totalCardsOverall}
+                </p>
+                <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                  Total Cards
+                </p>
+              </div>
+              <div className='bg-red-50 dark:bg-red-900 rounded-lg p-5 text-center shadow-md'>
+                <p className='text-4xl font-bold text-red-600 dark:text-red-300'>
+                  {totalDueCardsOverall}
+                </p>
+                <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                  Cards Due Now
+                </p>
+              </div>
+              <div className='bg-purple-50 dark:bg-purple-900 rounded-lg p-5 text-center shadow-md'>
+                <p className='text-4xl font-bold text-purple-600 dark:text-purple-300'>
+                  {totalLearnedCardsOverall}
+                </p>
+                <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                  Cards Learned
+                </p>
+              </div>
+            </div>
+            {totalDecksOverall === 0 && (
+              <p className='text-center text-gray-600 dark:text-gray-400 mt-8 text-lg'>
+                Start by adding a new deck to see your progress here!
+              </p>
+            )}
+          </section>
+        ) : (
+          // Original Deck and Card List Sections
+          <>
+            {/* Deck List Section (Left Column) */}
+            <section className='md:col-span-1 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 h-fit'>
+              <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center'>
+                <BookOpen className='mr-3 h-6 w-6 text-indigo-500' /> Your Decks
               </h2>
-
-              {/* User Progress Metrics for the selected deck */}
-              {!reviewMode && (
-                <div className='flex justify-around items-center bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-6 shadow-inner'>
-                  <div className='text-center'>
-                    <p className='text-xl font-bold text-indigo-600 dark:text-indigo-300'>
-                      {selectedDeck.cardCount || 0}
-                    </p>
-                    <p className='text-sm text-gray-600 dark:text-gray-400'>
-                      Total Cards
-                    </p>
-                  </div>
-                  <div className='text-center'>
-                    <p className='text-xl font-bold text-red-600 dark:text-red-300'>
-                      {dueCardsCount}
-                    </p>
-                    <p className='text-sm text-gray-600 dark:text-gray-400'>
-                      Due Today
-                    </p>
-                  </div>
-                  <div className='text-center'>
-                    <p className='text-xl font-bold text-green-600 dark:text-green-300'>
-                      {learnedCardsCount}
-                    </p>
-                    <p className='text-sm text-gray-600 dark:text-gray-400'>
-                      Cards Learned
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Add/Edit Card Modal/Form */}
-              {(isAddingCard || editingCard) && (
-                <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-                  <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
-                    <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
-                      {editingCard ? 'Edit Card' : 'Add New Card'}
-                    </h2>
-                    <textarea
-                      placeholder='Front of card (Question)'
-                      value={newCardFront}
-                      onChange={(e) => setNewCardFront(e.target.value)}
-                      className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
-                      rows='3'
-                    ></textarea>
-                    <textarea
-                      placeholder='Back of card (Answer)'
-                      value={newCardBack}
-                      onChange={(e) => setNewCardBack(e.target.value)}
-                      className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
-                      rows='3'
-                    ></textarea>
-
-                    {/* AI Content Generation Inputs */}
-                    <div className='mt-4 border-t border-gray-200 dark:border-gray-600 pt-4'>
-                      <p className='text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100'>
-                        Generate with AI:
-                      </p>
-                      <input
-                        type='text'
-                        placeholder="Subject (e.g., 'History of Rome')"
-                        value={aiSubject}
-                        onChange={(e) => setAiSubject(e.target.value)}
-                        className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                      />
-                      <textarea
-                        placeholder="Related topics (comma-separated, e.g., 'Julius Caesar, Roman Empire')"
-                        value={aiRelatedTopics}
-                        onChange={(e) => setAiRelatedTopics(e.target.value)}
-                        className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
-                        rows='2'
-                      ></textarea>
-                      <input
-                        type='number'
-                        placeholder='Number of cards (1-5)'
-                        value={numberOfCardsToGenerate}
-                        onChange={(e) =>
-                          setNumberOfCardsToGenerate(
-                            Math.max(
-                              1,
-                              Math.min(5, parseInt(e.target.value) || 1)
-                            )
-                          )
-                        } // Clamp between 1 and 5
-                        min='1'
-                        max='5'
-                        className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                      />
-                    </div>
-
-                    {/* AI Generation Button */}
-                    <button
-                      onClick={generateCardContentWithAI}
-                      disabled={isGeneratingAIContent || !aiSubject.trim()} // Disable if no subject or generating
-                      className={`flex items-center justify-center w-full px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 mb-4
-                        ${
-                          isGeneratingAIContent || !aiSubject.trim()
-                            ? 'bg-purple-400 cursor-not-allowed'
-                            : 'bg-purple-600 text-white hover:bg-purple-700'
-                        }`}
-                    >
-                      {isGeneratingAIContent ? (
-                        <>
-                          <svg
-                            className='animate-spin -ml-1 mr-3 h-5 w-5 text-white'
-                            xmlns='http://www.w3.org/2000/svg'
-                            fill='none'
-                            viewBox='0 0 24 24'
-                          >
-                            <circle
-                              className='opacity-25'
-                              cx='12'
-                              cy='12'
-                              r='10'
-                              stroke='currentColor'
-                              strokeWidth='4'
-                            ></circle>
-                            <path
-                              className='opacity-75'
-                              fill='currentColor'
-                              d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
-                            ></path>
-                          </svg>
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <Brain className='mr-2 h-5 w-5' /> Generate with AI
-                        </>
-                      )}
-                    </button>
-
-                    <div className='flex justify-end space-x-3'>
-                      <button
-                        onClick={() => {
-                          setIsAddingCard(false);
-                          setEditingCard(null);
-                          setNewCardFront('');
-                          setNewCardBack('');
-                          setAiSubject('');
-                          setAiRelatedTopics('');
-                          setNumberOfCardsToGenerate(1);
-                        }} // Close modal and reset form
-                        className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={async () => {
-                          // Modified to handle multiple cards if generated
-                          if (editingCard) {
-                            await updateCard();
-                          } else {
-                            // If AI generated cards, they are already added.
-                            // If not, and user manually entered, add the single card.
-                            if (
-                              !isGeneratingAIContent &&
-                              newCardFront.trim() &&
-                              newCardBack.trim()
-                            ) {
-                              await addCard({
-                                front: newCardFront,
-                                back: newCardBack,
-                              });
-                            }
-                          }
-                          setIsAddingCard(false);
-                          setEditingCard(null);
-                          setNewCardFront('');
-                          setNewCardBack('');
-                          setAiSubject('');
-                          setAiRelatedTopics('');
-                          setNumberOfCardsToGenerate(1);
-                        }}
-                        className='px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors'
-                      >
-                        {editingCard ? 'Update Card' : 'Add Card'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {reviewMode ? (
-                // Review Session UI
-                reviewCards.length > 0 ? (
-                  <div className='flex flex-col items-center justify-center min-h-[300px]'>
-                    <Flashcard
-                      card={reviewCards[currentReviewCardIndex]}
-                      isReviewMode={true}
-                      onReview={handleReview}
-                    />
-                    <div className='mt-4 text-center text-gray-600 dark:text-gray-400'>
-                      <p>
-                        Reviewing card {currentReviewCardIndex + 1} of{' '}
-                        {reviewCards.length}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className='text-center py-10'>
-                    <p className='text-xl text-gray-600 dark:text-gray-400'>
-                      No cards due for review in this deck right now!
-                    </p>
-                    <button
-                      onClick={() => {
-                        setReviewMode(false);
-                        setReviewCards([]);
-                        setCurrentReviewCardIndex(0);
-                      }}
-                      className='mt-4 px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105'
-                    >
-                      <XCircle className='mr-2 h-4 w-4 inline-block' /> End
-                      Review
-                    </button>
-                  </div>
-                )
-              ) : // Card List UI
-              cards.length === 0 ? (
+              {decks.length === 0 ? (
                 <p className='text-gray-600 dark:text-gray-400'>
-                  No cards in this deck. Add one!
+                  No decks yet. Add one to get started!
                 </p>
               ) : (
-                <div className='grid grid-cols-1 gap-4'>
-                  {cards.map((card) => (
-                    <Flashcard
-                      key={card.id}
-                      card={card}
-                      onDelete={() => deleteCard(card.id)}
-                      onEdit={() => startEditCard(card)}
-                      isReviewMode={false} // Not in review mode
-                    />
+                <ul className='space-y-3'>
+                  {decks.map((deck) => (
+                    <li key={deck.id}>
+                      <button
+                        onClick={() => {
+                          setSelectedDeck(deck);
+                          setReviewMode(false);
+                        }} // Select a deck, exit review mode
+                        className={`w-full text-left px-4 py-3 rounded-lg flex items-center justify-between
+                          ${
+                            selectedDeck?.id === deck.id
+                              ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold'
+                              : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
+                          }
+                          transition-colors duration-200 transform hover:scale-[1.02]`}
+                      >
+                        <span>{deck.name}</span>
+                        <span className='text-sm text-gray-500 dark:text-gray-400'>
+                          ({deck.cardCount || 0} cards)
+                        </span>
+                      </button>
+                    </li>
                   ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Card List / Review Section (Right Column) */}
+            <section className='md:col-span-2 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6'>
+              {selectedDeck ? (
+                <>
+                  <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center justify-between'>
+                    <span>
+                      <Brain className='mr-3 h-6 w-6 text-indigo-500 inline-block' />
+                      {reviewMode
+                        ? `Reviewing "${selectedDeck.name}" (${
+                            currentReviewCardIndex + 1
+                          }/${reviewCards.length})`
+                        : `Cards in "${selectedDeck.name}"`}
+                    </span>
+                    {!reviewMode && ( // Show Add Card and Start Review buttons only if not in review mode
+                      <div className='flex space-x-3'>
+                        <button
+                          onClick={() => setIsAddingCard(true)}
+                          className='flex items-center px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                        >
+                          <PlusCircle className='mr-2 h-4 w-4' /> Add Card
+                        </button>
+                        <button
+                          onClick={startReviewSession}
+                          className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                        >
+                          <PlayCircle className='mr-2 h-4 w-4' /> Start Review
+                        </button>
+                      </div>
+                    )}
+                    {reviewMode && ( // Show End Review button only if in review mode
+                      <button
+                        onClick={() => {
+                          setReviewMode(false);
+                          setReviewCards([]);
+                          setCurrentReviewCardIndex(0);
+                        }}
+                        className='flex items-center px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                      >
+                        <XCircle className='mr-2 h-4 w-4' /> End Review
+                      </button>
+                    )}
+                  </h2>
+
+                  {/* User Progress Metrics for the selected deck */}
+                  {!reviewMode && (
+                    <div className='flex justify-around items-center bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-6 shadow-inner'>
+                      <div className='text-center'>
+                        <p className='text-xl font-bold text-indigo-600 dark:text-indigo-300'>
+                          {selectedDeck.cardCount || 0}
+                        </p>
+                        <p className='text-sm text-gray-600 dark:text-gray-400'>
+                          Total Cards
+                        </p>
+                      </div>
+                      <div className='text-center'>
+                        <p className='text-xl font-bold text-red-600 dark:text-red-300'>
+                          {dueCardsCount}
+                        </p>
+                        <p className='text-sm text-gray-600 dark:text-gray-400'>
+                          Due Today
+                        </p>
+                      </div>
+                      <div className='text-center'>
+                        <p className='text-xl font-bold text-green-600 dark:text-green-300'>
+                          {learnedCardsCount}
+                        </p>
+                        <p className='text-sm text-gray-600 dark:text-gray-400'>
+                          Cards Learned
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add/Edit Card Modal/Form */}
+                  {(isAddingCard || editingCard) && (
+                    <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
+                      <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
+                        <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+                          {editingCard ? 'Edit Card' : 'Add New Card'}
+                        </h2>
+                        <textarea
+                          placeholder='Front of card (Question)'
+                          value={newCardFront}
+                          onChange={(e) => setNewCardFront(e.target.value)}
+                          className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                          rows='3'
+                        ></textarea>
+                        <textarea
+                          placeholder='Back of card (Answer)'
+                          value={newCardBack}
+                          onChange={(e) => setNewCardBack(e.target.value)}
+                          className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                          rows='3'
+                        ></textarea>
+
+                        {/* AI Content Generation Inputs */}
+                        <div className='mt-4 border-t border-gray-200 dark:border-gray-600 pt-4'>
+                          <p className='text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100'>
+                            Generate with AI:
+                          </p>
+                          <input
+                            type='text'
+                            placeholder="Subject (e.g., 'History of Rome')"
+                            value={aiSubject}
+                            onChange={(e) => setAiSubject(e.target.value)}
+                            className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                          />
+                          <textarea
+                            placeholder="Related topics (comma-separated, e.g., 'Julius Caesar, Roman Empire')"
+                            value={aiRelatedTopics}
+                            onChange={(e) => setAiRelatedTopics(e.target.value)}
+                            className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                            rows='2'
+                          ></textarea>
+                          <input
+                            type='number'
+                            placeholder='Number of cards (1-5)'
+                            value={numberOfCardsToGenerate}
+                            onChange={(e) =>
+                              setNumberOfCardsToGenerate(
+                                Math.max(
+                                  1,
+                                  Math.min(5, parseInt(e.target.value) || 1)
+                                )
+                              )
+                            } // Clamp between 1 and 5
+                            min='1'
+                            max='5'
+                            className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                          />
+                        </div>
+
+                        {/* AI Generation Button */}
+                        <button
+                          onClick={generateCardContentWithAI}
+                          disabled={isGeneratingAIContent || !aiSubject.trim()} // Disable if no subject or generating
+                          className={`flex items-center justify-center w-full px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 mb-4
+                            ${
+                              isGeneratingAIContent || !aiSubject.trim()
+                                ? 'bg-purple-400 cursor-not-allowed'
+                                : 'bg-purple-600 text-white hover:bg-purple-700'
+                            }`}
+                        >
+                          {isGeneratingAIContent ? (
+                            <>
+                              <svg
+                                className='animate-spin -ml-1 mr-3 h-5 w-5 text-white'
+                                xmlns='http://www.w3.org/2000/svg'
+                                fill='none'
+                                viewBox='0 0 24 24'
+                              >
+                                <circle
+                                  className='opacity-25'
+                                  cx='12'
+                                  cy='12'
+                                  r='10'
+                                  stroke='currentColor'
+                                  strokeWidth='4'
+                                ></circle>
+                                <path
+                                  className='opacity-75'
+                                  fill='currentColor'
+                                  d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+                                ></path>
+                              </svg>
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Brain className='mr-2 h-5 w-5' /> Generate with
+                              AI
+                            </>
+                          )}
+                        </button>
+
+                        <div className='flex justify-end space-x-3'>
+                          <button
+                            onClick={() => {
+                              setIsAddingCard(false);
+                              setEditingCard(null);
+                              setNewCardFront('');
+                              setNewCardBack('');
+                              setAiSubject('');
+                              setAiRelatedTopics('');
+                              setNumberOfCardsToGenerate(1);
+                            }} // Close modal and reset form
+                            className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              // Modified to handle multiple cards if generated
+                              if (editingCard) {
+                                await updateCard();
+                              } else {
+                                // If AI generated cards, they are already added.
+                                // If not, and user manually entered, add the single card.
+                                if (
+                                  !isGeneratingAIContent &&
+                                  newCardFront.trim() &&
+                                  newCardBack.trim()
+                                ) {
+                                  await addCard({
+                                    front: newCardFront,
+                                    back: newCardBack,
+                                  });
+                                }
+                              }
+                              setIsAddingCard(false);
+                              setEditingCard(null);
+                              setNewCardFront('');
+                              setNewCardBack('');
+                              setAiSubject('');
+                              setAiRelatedTopics('');
+                              setNumberOfCardsToGenerate(1);
+                            }}
+                            className='px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors'
+                          >
+                            {editingCard ? 'Update Card' : 'Add Card'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {reviewMode ? (
+                    // Review Session UI
+                    reviewCards.length > 0 ? (
+                      <div className='flex flex-col items-center justify-center min-h-[300px]'>
+                        <Flashcard
+                          card={reviewCards[currentReviewCardIndex]}
+                          isReviewMode={true}
+                          onReview={handleReview}
+                        />
+                        <div className='mt-4 text-center text-gray-600 dark:text-gray-400'>
+                          <p>
+                            Reviewing card {currentReviewCardIndex + 1} of{' '}
+                            {reviewCards.length}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className='text-center py-10'>
+                        <p className='text-xl text-gray-600 dark:text-gray-400'>
+                          No cards due for review in this deck right now!
+                        </p>
+                        <button
+                          onClick={() => {
+                            setReviewMode(false);
+                            setReviewCards([]);
+                            setCurrentReviewCardIndex(0);
+                          }}
+                          className='mt-4 px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105'
+                        >
+                          <XCircle className='mr-2 h-4 w-4 inline-block' /> End
+                          Review
+                        </button>
+                      </div>
+                    )
+                  ) : // Card List UI
+                  cards.length === 0 ? (
+                    <p className='text-gray-600 dark:text-gray-400'>
+                      No cards in this deck. Add one!
+                    </p>
+                  ) : (
+                    <div className='grid grid-cols-1 gap-4'>
+                      {cards.map((card) => (
+                        <Flashcard
+                          key={card.id}
+                          card={card}
+                          onDelete={() => deleteCard(card.id)}
+                          onEdit={() => startEditCard(card)}
+                          isReviewMode={false} // Not in review mode
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className='text-center py-10'>
+                  <p className='text-xl text-gray-600 dark:text-gray-400'>
+                    Select a deck from the left to view its cards or add new
+                    ones.
+                  </p>
                 </div>
               )}
-            </>
-          ) : (
-            <div className='text-center py-10'>
-              <p className='text-xl text-gray-600 dark:text-gray-400'>
-                Select a deck from the left to view its cards or add new ones.
-              </p>
-            </div>
-          )}
-        </section>
+            </section>
+          </>
+        )}
       </main>
 
       {/* Footer */}
