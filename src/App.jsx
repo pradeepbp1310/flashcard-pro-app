@@ -28,7 +28,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-} from 'lucide-react';
+  RotateCcw,
+} from 'lucide-react'; // Added RotateCcw for "Again" button
 
 // Main App Component
 const App = () => {
@@ -583,7 +584,12 @@ const App = () => {
   const calculateNextReview = (card, quality) => {
     let { repetitions, interval, easeFactor } = card;
 
-    if (quality >= 3) {
+    if (quality === 0) {
+      // Again (completely forgot, show very soon)
+      repetitions = 0;
+      interval = 0; // Means due immediately (within minutes)
+      easeFactor = easeFactor - 0.2; // More aggressive decrease for "Again"
+    } else if (quality >= 3) {
       // Correct response (Good or Easy)
       if (repetitions === 0) {
         interval = 1;
@@ -594,20 +600,27 @@ const App = () => {
       }
       repetitions++;
     } else {
-      // Incorrect response (Hard)
+      // Quality 1 or 2 (Incorrect, but recognized / Hard)
       repetitions = 0;
-      interval = 1;
+      interval = 1; // Due tomorrow
     }
 
-    // Adjust ease factor based on quality
-    easeFactor =
-      easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+    // Adjust ease factor based on quality (only if not "Again" - quality 0)
+    if (quality > 0) {
+      easeFactor =
+        easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
+    }
     if (easeFactor < 1.3) {
       easeFactor = 1.3; // Minimum ease factor
     }
 
     const nextReviewDate = new Date();
-    nextReviewDate.setDate(nextReviewDate.getDate() + interval);
+    if (interval === 0) {
+      // For "Again" (quality 0), schedule for a few minutes later
+      nextReviewDate.setMinutes(nextReviewDate.getMinutes() + 5); // Show in 5 minutes
+    } else {
+      nextReviewDate.setDate(nextReviewDate.getDate() + interval);
+    }
 
     return {
       repetitions,
@@ -1099,13 +1112,24 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
 
       {isReviewMode &&
         isFlipped && ( // Show review buttons only if in review mode AND flipped
-          <div className='mt-4 flex justify-center space-x-3'>
+          <div className='mt-4 flex justify-center space-x-2 sm:space-x-3'>
+            {' '}
+            {/* Adjusted spacing for responsiveness */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onReview(card, 0);
+              }} // Quality 0: Again
+              className='flex items-center px-2 py-2 sm:px-3 bg-gray-500 text-white rounded-lg shadow-md hover:bg-gray-600 transition-colors transform hover:scale-105 text-sm'
+            >
+              <RotateCcw className='mr-1 h-4 w-4' /> Again
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onReview(card, 1);
               }} // Quality 1: Hard
-              className='flex items-center px-3 py-2 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition-colors transform hover:scale-105 text-sm'
+              className='flex items-center px-2 py-2 sm:px-3 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition-colors transform hover:scale-105 text-sm'
             >
               <XCircle className='mr-1 h-4 w-4' /> Hard
             </button>
@@ -1114,7 +1138,7 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
                 e.stopPropagation();
                 onReview(card, 3);
               }} // Quality 3: Good
-              className='flex items-center px-3 py-2 bg-yellow-500 text-white rounded-lg shadow-md hover:bg-yellow-600 transition-colors transform hover:scale-105 text-sm'
+              className='flex items-center px-2 py-2 sm:px-3 bg-yellow-500 text-white rounded-lg shadow-md hover:bg-yellow-600 transition-colors transform hover:scale-105 text-sm'
             >
               <Clock className='mr-1 h-4 w-4' /> Good
             </button>
@@ -1123,7 +1147,7 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
                 e.stopPropagation();
                 onReview(card, 5);
               }} // Quality 5: Easy
-              className='flex items-center px-3 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition-colors transform hover:scale-105 text-sm'
+              className='flex items-center px-2 py-2 sm:px-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition-colors transform hover:scale-105 text-sm'
             >
               <CheckCircle className='mr-1 h-4 w-4' /> Easy
             </button>
