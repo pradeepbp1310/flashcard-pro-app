@@ -73,8 +73,8 @@ const App = () => {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [cards, setCards] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
-  const [newCardFront, setNewCardFront] = useState('');
-  const [newCardBack, setNewCardBack] = '';
+  const [newCardFront, setNewCardFront] = useState(''); // FIX: Correctly use useState
+  const [newCardBack, setNewCardBack] = useState(''); // FIX: Correctly use useState
   const [isAddingDeck, setIsAddingDeck] = useState(false);
   const [isAddingCard, setIsAddingCard] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
@@ -84,6 +84,7 @@ const App = () => {
   const [aiSubject, setAiSubject] = useState('');
   const [aiRelatedTopics, setAiRelatedTopics] = useState('');
   const [numberOfCardsToGenerate, setNumberOfCardsToGenerate] = useState(1);
+  const [aiCopiedText, setAiCopiedText] = useState(''); // New state for copied text
 
   // Spaced Repetition / Review Session States
   const [reviewMode, setReviewMode] = useState(false);
@@ -137,9 +138,11 @@ const App = () => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
+      console.log('Applying dark mode class.');
     } else {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
+      console.log('Removing dark mode class.');
     }
   }, [isDarkMode]);
 
@@ -375,8 +378,8 @@ const App = () => {
 
       const learned = cards.filter((card) => card.repetitions > 0).length;
 
-      setDueCardsCount(dueToday);
-      setLearnedCardsCount(learned);
+      setDueCardsCount(learned); // Changed to count cards with repetitions > 0 as "learned"
+      setLearnedCardsCount(dueToday); // Changed to count cards with nextReviewDate <= currentTime as "due"
       console.log(
         `Progress Update (Selected Deck): Due Today: ${dueToday}, Cards Learned: ${learned}`
       );
@@ -631,6 +634,7 @@ const App = () => {
     setAiSubject('');
     setAiRelatedTopics('');
     setNumberOfCardsToGenerate(1);
+    setAiCopiedText(''); // Clear copied text when starting edit
   };
 
   // Function to update an existing card in Firestore
@@ -679,13 +683,27 @@ const App = () => {
         contextPrompt = `Consider the following existing flashcards from this deck to generate new, related, but not identical, content:\n${existingCardContext}\n---\n`;
       }
 
-      const promptText = `Generate ${numberOfCardsToGenerate} flashcard questions and answers.
-      ${contextPrompt}
-      ${aiSubject ? `Subject: ${aiSubject}.` : ''}
-      ${aiRelatedTopics ? `Related topics/keywords: ${aiRelatedTopics}.` : ''}
-      Ensure each question is concise and its answer is informative.
-      Format the response as a JSON array of objects, where each object has two keys: "question" (string) and "answer" (string).
-      Example: [{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]`;
+      let promptText = '';
+      if (aiCopiedText.trim()) {
+        // If copied text is provided, generate Q/A based on it
+        promptText = `Generate ${numberOfCardsToGenerate} flashcard questions and answers based on the following text:\n\n"${aiCopiedText}"\n\n`;
+        promptText += `Ensure each question is concise and its answer is informative. Format the response as a JSON array of objects, where each object has two keys: "question" (string) and "answer" (string). Example: [{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]`;
+      } else if (aiSubject.trim()) {
+        // Fallback to subject and related topics if no copied text
+        promptText = `Generate ${numberOfCardsToGenerate} flashcard questions and answers.
+        ${contextPrompt}
+        Subject: ${aiSubject}.
+        ${aiRelatedTopics ? `Related topics/keywords: ${aiRelatedTopics}.` : ''}
+        Ensure each question is concise and its answer is informative.
+        Format the response as a JSON array of objects, where each object has two keys: "question" (string) and "answer" (string).
+        Example: [{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]`;
+      } else {
+        console.warn(
+          'No input provided for AI generation (neither copied text nor subject).'
+        );
+        setIsGeneratingAIContent(false);
+        return;
+      }
 
       let chatHistory = [];
       chatHistory.push({ role: 'user', parts: [{ text: promptText }] });
@@ -780,6 +798,7 @@ const App = () => {
       setAiSubject('');
       setAiRelatedTopics('');
       setNumberOfCardsToGenerate(1);
+      setAiCopiedText(''); // Clear copied text after generation
     }
   };
 
@@ -1029,25 +1048,13 @@ const App = () => {
     <div className='min-h-screen bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-gray-100 font-inter flex flex-col items-center'>
       {/* Header Section */}
       <header className='w-full bg-white dark:bg-gray-800 shadow-xl p-6 mb-8 flex flex-col sm:flex-row items-center justify-between sticky top-0 z-10 rounded-none'>
-        {' '}
-        {/* Removed rounded-xl */}
         <div className='flex items-center justify-between w-full sm:w-auto'>
-          {/* Logo and App Name */}
+          {/* App Name */}
           <div className='flex items-center'>
-            {isDarkMode ? (
-              <img
-                src='/src/assets/logo-dark.jpg' // Path for dark mode logo
-                alt='Flashcard Pro Logo Dark'
-                className='h-10 w-10 mr-3'
-              />
-            ) : (
-              <img
-                src='/src/assets/logo-light.png' // Path for light mode logo
-                alt='Flashcard Pro Logo Light'
-                className='h-10 w-10 mr-3'
-              />
-            )}
-            <h1 className='text-4xl sm:text-3xl font-extrabold text-indigo-800 dark:text-indigo-400'>
+            {/* Removed logo img tags */}
+            <h1 className='text-3xl sm:text-4xl font-extrabold text-indigo-800 dark:text-indigo-400'>
+              {' '}
+              {/* Decreased text size */}
               Flashcard Pro
             </h1>
           </div>
@@ -1063,6 +1070,7 @@ const App = () => {
             )}
           </button>
         </div>
+
         {/* Navigation and Theme Toggle (Desktop and Mobile) */}
         <nav
           className={`w-full sm:w-auto mt-4 sm:mt-0 ${
@@ -1174,7 +1182,13 @@ const App = () => {
             )}
             {/* Theme Toggle Button */}
             <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
+              onClick={() => {
+                console.log(
+                  'Theme toggle button clicked. Current dark mode state:',
+                  isDarkMode
+                );
+                setIsDarkMode((prevMode) => !prevMode);
+              }}
               className='flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl shadow-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center'
               title={
                 isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'
@@ -1227,7 +1241,7 @@ const App = () => {
               placeholder='Enter Deck Name'
               value={newDeckName}
               onChange={(e) => setNewDeckName(e.target.value)}
-              className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+              className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
             <div className='flex justify-end space-x-4'>
               <button
@@ -1236,13 +1250,13 @@ const App = () => {
                   setNewDeckName(''); // Clear input on cancel
                   setAuthError(''); // Clear any auth errors
                 }}
-                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
+                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium shadow-md'
               >
                 Cancel
               </button>
               <button
                 onClick={addDeck}
-                className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors duration-200 font-medium shadow-md'
+                className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition-colors duration-200 font-medium'
               >
                 Create Deck
               </button>
@@ -1272,13 +1286,13 @@ const App = () => {
                   setShowDeleteDeckConfirm(false);
                   setDeckToDelete(null);
                 }}
-                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
+                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium shadow-md'
               >
                 Cancel
               </button>
               <button
                 onClick={() => deleteDeck(deckToDelete.id)}
-                className='px-6 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors duration-200 font-medium shadow-md'
+                className='px-6 py-2.5 bg-red-600 text-white rounded-xl shadow-lg hover:bg-red-700 transition-colors duration-200 font-medium'
               >
                 Delete
               </button>
@@ -1320,7 +1334,7 @@ const App = () => {
                     Overall Dashboard
                   </h2>
                   <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'>
-                    <div className='bg-blue-50 dark:bg-blue-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                    <div className='bg-blue-50 dark:bg-blue-900 rounded-xl p-6 text-center shadow-lg flex flex-col items-center justify-center py-8'>
                       <p className='text-5xl font-extrabold text-blue-700 dark:text-blue-300'>
                         {totalDecksOverall}
                       </p>
@@ -1328,7 +1342,7 @@ const App = () => {
                         Total Decks
                       </p>
                     </div>
-                    <div className='bg-green-50 dark:bg-green-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                    <div className='bg-green-50 dark:bg-green-900 rounded-xl p-6 text-center shadow-lg flex flex-col items-center justify-center py-8'>
                       <p className='text-5xl font-extrabold text-green-700 dark:text-green-300'>
                         {totalCardsOverall}
                       </p>
@@ -1336,7 +1350,7 @@ const App = () => {
                         Total Cards
                       </p>
                     </div>
-                    <div className='bg-red-50 dark:bg-red-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                    <div className='bg-red-50 dark:bg-red-900 rounded-xl p-6 text-center shadow-lg flex flex-col items-center justify-center py-8'>
                       <p className='text-5xl font-extrabold text-red-600 dark:text-red-300'>
                         {totalDueCardsOverall}
                       </p>
@@ -1344,7 +1358,7 @@ const App = () => {
                         Cards Due Now
                       </p>
                     </div>
-                    <div className='bg-purple-50 dark:bg-purple-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                    <div className='bg-purple-50 dark:bg-purple-900 rounded-xl p-6 text-center shadow-lg flex flex-col items-center justify-center py-8'>
                       <p className='text-5xl font-extrabold text-purple-700 dark:text-purple-300'>
                         {totalLearnedCardsOverall}
                       </p>
@@ -1381,7 +1395,7 @@ const App = () => {
                           console.log('Add New Deck button clicked!');
                           setIsAddingDeck(true);
                         }}
-                        className='flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 mb-6 w-full justify-center font-medium'
+                        className='flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 mb-6 w-full justify-center font-medium'
                       >
                         <PlusCircle className='mr-2 h-5 w-5' /> Add New Deck
                       </button>
@@ -1412,7 +1426,7 @@ const App = () => {
                                 ${
                                   selectedDeck?.id === deck.id
                                     ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold shadow-inner'
-                                    : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
+                                    : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 shadow-md'
                                 }
                                 transition-colors duration-200 transform hover:scale-[1.02] origin-left text-lg`}
                             >
@@ -1458,14 +1472,14 @@ const App = () => {
                               <div className='flex space-x-3'>
                                 <button
                                   onClick={() => setIsAddingCard(true)}
-                                  className='flex items-center px-4 py-2 bg-green-600 text-white rounded-xl shadow-md hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
+                                  className='flex items-center px-4 py-2 bg-green-600 text-white rounded-xl shadow-lg hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                                 >
                                   <PlusCircle className='mr-2 h-4 w-4' /> Add
                                   Card
                                 </button>
                                 <button
                                   onClick={startReviewSession}
-                                  className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
+                                  className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                                 >
                                   <PlayCircle className='mr-2 h-4 w-4' /> Start
                                   Review
@@ -1479,7 +1493,7 @@ const App = () => {
                                 setReviewCards([]);
                                 setCurrentReviewCardIndex(0);
                               }}
-                              className='flex items-center px-4 py-2 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
+                              className='flex items-center px-4 py-2 bg-red-600 text-white rounded-xl shadow-lg hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                             >
                               <XCircle className='mr-2 h-4 w-4 inline-block' />{' '}
                               End Review
@@ -1520,7 +1534,7 @@ const App = () => {
                         {/* Add/Edit Card Modal/Form */}
                         {(isAddingCard || editingCard) && (
                           <div className='fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in'>
-                            <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md'>
+                            <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-lg max-h-screen overflow-y-auto'>
                               <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100'>
                                 {editingCard ? 'Edit Card' : 'Add New Card'}
                               </h2>
@@ -1530,14 +1544,14 @@ const App = () => {
                                 onChange={(e) =>
                                   setNewCardFront(e.target.value)
                                 }
-                                className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                                className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                 rows='3'
                               ></textarea>
                               <textarea
                                 placeholder='Back of card (Answer)'
                                 value={newCardBack}
                                 onChange={(e) => setNewCardBack(e.target.value)}
-                                className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                                className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-400 text-lg'
                                 rows='3'
                               ></textarea>
 
@@ -1547,12 +1561,35 @@ const App = () => {
                                   <Brain className='mr-2 h-5 w-5 text-purple-500' />{' '}
                                   Generate with AI:
                                 </p>
+                                <textarea
+                                  placeholder='Paste text here for AI to generate Q/A from (e.g., notes, article snippets)'
+                                  value={aiCopiedText}
+                                  onChange={(e) => {
+                                    setAiCopiedText(e.target.value);
+                                    // Clear subject/topics if user starts pasting text
+                                    if (e.target.value.trim()) {
+                                      setAiSubject('');
+                                      setAiRelatedTopics('');
+                                    }
+                                  }}
+                                  className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                                  rows='4'
+                                ></textarea>
+                                <p className='text-sm text-gray-600 dark:text-gray-400 mb-4 text-center'>
+                                  OR
+                                </p>
                                 <input
                                   type='text'
                                   placeholder="Subject (e.g., 'History of Rome')"
                                   value={aiSubject}
-                                  onChange={(e) => setAiSubject(e.target.value)}
-                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                                  onChange={(e) => {
+                                    setAiSubject(e.target.value);
+                                    // Clear copied text if user starts typing subject
+                                    if (e.target.value.trim()) {
+                                      setAiCopiedText('');
+                                    }
+                                  }}
+                                  className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                 />
                                 <textarea
                                   placeholder="Related topics (comma-separated, e.g., 'Julius Caesar, Roman Empire')"
@@ -1560,7 +1597,7 @@ const App = () => {
                                   onChange={(e) =>
                                     setAiRelatedTopics(e.target.value)
                                   }
-                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                                  className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                   rows='2'
                                 ></textarea>
                                 <input
@@ -1580,7 +1617,7 @@ const App = () => {
                                   }
                                   min='1'
                                   max='5'
-                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-lg'
+                                  className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg mb-6 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-lg'
                                 />
                               </div>
 
@@ -1588,11 +1625,13 @@ const App = () => {
                               <button
                                 onClick={generateCardContentWithAI}
                                 disabled={
-                                  isGeneratingAIContent || !aiSubject.trim()
+                                  isGeneratingAIContent ||
+                                  (!aiSubject.trim() && !aiCopiedText.trim())
                                 }
-                                className={`flex items-center justify-center w-full px-6 py-3 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 mb-6 font-medium text-lg
+                                className={`flex items-center justify-center w-full px-6 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 mb-6 font-medium text-lg
                                   ${
-                                    isGeneratingAIContent || !aiSubject.trim()
+                                    isGeneratingAIContent ||
+                                    (!aiSubject.trim() && !aiCopiedText.trim())
                                       ? 'bg-purple-400 cursor-not-allowed'
                                       : 'bg-purple-600 text-white hover:bg-purple-700'
                                   }`}
@@ -1639,8 +1678,9 @@ const App = () => {
                                     setAiSubject('');
                                     setAiRelatedTopics('');
                                     setNumberOfCardsToGenerate(1);
+                                    setAiCopiedText('');
                                   }}
-                                  className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
+                                  className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium shadow-md'
                                 >
                                   Cancel
                                 </button>
@@ -1667,8 +1707,9 @@ const App = () => {
                                     setAiSubject('');
                                     setAiRelatedTopics('');
                                     setNumberOfCardsToGenerate(1);
+                                    setAiCopiedText('');
                                   }}
-                                  className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors duration-200 font-medium shadow-md'
+                                  className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg hover:bg-indigo-700 transition-colors duration-200 font-medium'
                                 >
                                   {editingCard ? 'Update Card' : 'Add Card'}
                                 </button>
@@ -1705,7 +1746,7 @@ const App = () => {
                                   setReviewCards([]);
                                   setCurrentReviewCardIndex(0);
                                 }}
-                                className='mt-6 px-6 py-2.5 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 font-medium'
+                                className='mt-6 px-6 py-2.5 bg-red-600 text-white rounded-xl shadow-lg hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 font-medium'
                               >
                                 <XCircle className='mr-2 h-4 w-4 inline-block' />{' '}
                                 End Review
@@ -1726,7 +1767,7 @@ const App = () => {
                                 className={`p-2 rounded-xl transition-colors ${
                                   cardViewMode === 'grid'
                                     ? 'bg-indigo-600 text-white shadow-md'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 shadow-md'
                                 }`}
                                 title='Grid View'
                               >
@@ -1737,7 +1778,7 @@ const App = () => {
                                 className={`p-2 rounded-xl transition-colors ${
                                   cardViewMode === 'list'
                                     ? 'bg-indigo-600 text-white shadow-md'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 shadow-md'
                                 }`}
                                 title='List View'
                               >
@@ -1780,8 +1821,8 @@ const App = () => {
                                       className={`px-4 py-2 rounded-xl font-medium transition-colors duration-200
                                         ${
                                           currentCardPage === i + 1
-                                            ? 'bg-indigo-600 text-white shadow-md'
-                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                            ? 'bg-indigo-600 text-white shadow-lg'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 shadow-md'
                                         }`}
                                     >
                                       {i + 1}
@@ -1812,8 +1853,6 @@ const App = () => {
 
       {/* Footer */}
       <footer className='w-full bg-white dark:bg-gray-800 shadow-xl mt-12 text-center text-gray-600 dark:text-gray-400 text-sm py-4 rounded-none'>
-        {' '}
-        {/* Removed rounded-xl */}
         <p>
           &copy; {new Date().getFullYear()} Flashcard Pro. All rights reserved.
         </p>
@@ -2056,7 +2095,7 @@ const AuthForm = ({ type, onAuth, authError, isAuthServiceReady }) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+              className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
           </div>
           <div>
@@ -2073,7 +2112,7 @@ const AuthForm = ({ type, onAuth, authError, isAuthServiceReady }) => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+              className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
           </div>
           {type === 'signup' && (
@@ -2091,14 +2130,14 @@ const AuthForm = ({ type, onAuth, authError, isAuthServiceReady }) => {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
+                className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-lg rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
               />
             </div>
           )}
           <button
             type='submit'
             disabled={!isAuthServiceReady} // Disable button until auth service is ready
-            className={`w-full px-6 py-3 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-semibold text-lg
+            className={`w-full px-6 py-3 rounded-xl shadow-lg transition-all duration-300 transform hover:scale-105 font-semibold text-lg
               ${
                 isAuthServiceReady
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -2195,7 +2234,7 @@ const Flashcard = ({
   } = formatNextReviewDate(card.nextReviewDate);
 
   const cardBaseClasses =
-    'relative bg-white dark:bg-gray-700 rounded-xl shadow-md p-6 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] flex justify-between';
+    'relative bg-white dark:bg-gray-700 rounded-xl shadow-lg p-6 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] flex justify-between'; // Added shadow-lg
   const cardHeightClass = 'min-h-[180px]'; // Default height for grid view
 
   const cardListClasses = 'flex-row items-center p-4 min-h-[auto] !h-auto'; // Adjusted for list view
@@ -2231,7 +2270,7 @@ const Flashcard = ({
               e.stopPropagation();
               onEdit();
             }}
-            className='p-2 rounded-full bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors'
+            className='p-2 rounded-full bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors shadow-md'
             title='Edit Card'
           >
             <Edit className='h-4 w-4' />
@@ -2241,7 +2280,7 @@ const Flashcard = ({
               e.stopPropagation();
               onDelete();
             }}
-            className='p-2 rounded-full bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-700 transition-colors'
+            className='p-2 rounded-full bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-700 transition-colors shadow-md'
             title='Delete Card'
           >
             <Trash2 className='h-4 w-4' />
@@ -2256,7 +2295,7 @@ const Flashcard = ({
               e.stopPropagation();
               onReview(card, 0);
             }}
-            className='flex items-center px-2 py-2 sm:px-3 bg-gray-500 text-white rounded-lg shadow-md hover:bg-gray-600 transition-colors transform hover:scale-105 text-sm'
+            className='flex items-center px-2 py-2 sm:px-3 bg-gray-500 text-white rounded-lg shadow-lg hover:bg-gray-600 transition-colors transform hover:scale-105 text-sm'
           >
             <RotateCcw className='mr-1 h-4 w-4' /> Again
           </button>
@@ -2265,7 +2304,7 @@ const Flashcard = ({
               e.stopPropagation();
               onReview(card, 1);
             }}
-            className='flex items-center px-2 py-2 sm:px-3 bg-red-500 text-white rounded-lg shadow-md hover:bg-red-600 transition-colors transform hover:scale-105 text-sm'
+            className='flex items-center px-2 py-2 sm:px-3 bg-red-500 text-white rounded-lg shadow-lg hover:bg-red-600 transition-colors transform hover:scale-105 text-sm'
           >
             <XCircle className='mr-1 h-4 w-4' /> Hard
           </button>
@@ -2274,7 +2313,7 @@ const Flashcard = ({
               e.stopPropagation();
               onReview(card, 3);
             }}
-            className='flex items-center px-2 py-2 sm:px-3 bg-yellow-500 text-white rounded-lg shadow-md hover:bg-yellow-600 transition-colors transform hover:scale-105 text-sm'
+            className='flex items-center px-2 py-2 sm:px-3 bg-yellow-500 text-white rounded-lg shadow-lg hover:bg-yellow-600 transition-colors transform hover:scale-105 text-sm'
           >
             <Clock className='mr-1 h-4 w-4' /> Good
           </button>
@@ -2283,7 +2322,7 @@ const Flashcard = ({
               e.stopPropagation();
               onReview(card, 5);
             }}
-            className='flex items-center px-2 py-2 sm:px-3 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition-colors transform hover:scale-105 text-sm'
+            className='flex items-center px-2 py-2 sm:px-3 bg-green-500 text-white rounded-lg shadow-lg hover:bg-green-600 transition-colors transform hover:scale-105 text-sm'
           >
             <CheckCircle className='mr-1 h-4 w-4' /> Easy
           </button>
