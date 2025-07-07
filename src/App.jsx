@@ -21,7 +21,7 @@ import {
   updateDoc,
   getDoc,
   getDocs,
-} from 'firebase/firestore'; // Added getDocs
+} from 'firebase/firestore';
 import {
   PlusCircle,
   Brain,
@@ -54,7 +54,13 @@ import {
   Lightbulb,
   Compass,
   Type,
-} from 'lucide-react'; // Added new icons
+  List,
+  Grid,
+  Sun,
+  Moon,
+  Menu,
+  X,
+} from 'lucide-react'; // Added List, Grid, Sun, Moon, Menu, X icons
 
 // --- Main App Component ---
 const App = () => {
@@ -67,7 +73,7 @@ const App = () => {
   const [selectedDeck, setSelectedDeck] = useState(null);
   const [cards, setCards] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
-  const [newCardFront, setNewCardFront] = '';
+  const [newCardFront, setNewCardFront] = useState('');
   const [newCardBack, setNewCardBack] = '';
   const [isAddingDeck, setIsAddingDeck] = useState(false);
   const [isAddingCard, setIsAddingCard] = useState(false);
@@ -76,7 +82,7 @@ const App = () => {
 
   // New state variables for AI content generation input
   const [aiSubject, setAiSubject] = useState('');
-  const [aiRelatedTopics, setAiRelatedTopics] = '';
+  const [aiRelatedTopics, setAiRelatedTopics] = useState('');
   const [numberOfCardsToGenerate, setNumberOfCardsToGenerate] = useState(1);
 
   // Spaced Repetition / Review Session States
@@ -102,59 +108,70 @@ const App = () => {
   const [showDeleteDeckConfirm, setShowDeleteDeckConfirm] = useState(false);
   const [deckToDelete, setDeckToDelete] = useState(null);
 
-  // --- IMPORTANT: Firebase project configuration ---
-  const localFirebaseConfig = {
-    apiKey:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_API_KEY
-        ? import.meta.env.VITE_FIREBASE_API_KEY
-        : 'YOUR_FIREBASE_WEB_API_KEY_HERE',
-    authDomain:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
-        ? import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
-        : 'YOUR_FIREBASE_AUTH_DOMAIN_HERE',
-    projectId:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_PROJECT_ID
-        ? import.meta.env.VITE_FIREBASE_PROJECT_ID
-        : 'YOUR_FIREBASE_PROJECT_ID_HERE',
-    storageBucket:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
-        ? import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
-        : 'YOUR_FIREBASE_STORAGE_BUCKET_HERE',
-    messagingSenderId:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-        ? import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-        : 'YOUR_FIREBASE_MESSAGING_SENDER_ID_HERE',
-    appId:
-      typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      import.meta.env.VITE_FIREBASE_APP_ID
-        ? import.meta.env.VITE_FIREBASE_APP_ID
-        : 'YOUR_FIREBASE_APP_ID_HERE',
-  };
+  // New state to explicitly track if Firebase Auth is ready for operations
+  const [isAuthServiceReady, setIsAuthServiceReady] = useState(false);
+
+  // New state for card view mode (list or grid)
+  const [cardViewMode, setCardViewMode] = useState('grid'); // Default to grid view
+
+  // Pagination states
+  const [cardsPerPage] = useState(10); // Number of cards per page
+  const [currentCardPage, setCurrentCardPage] = useState(1); // Current page for cards
+
+  // Mobile menu state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Theme state
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Initialize theme from localStorage or default to system preference
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      return savedTheme === 'dark';
+    }
+    // Check system preference only if no theme is saved in localStorage
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  // Effect to apply dark mode class to HTML
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Firebase Initialization and Authentication
   useEffect(() => {
     const initializeFirebase = async () => {
       try {
-        const firebaseConfigToUse =
-          typeof __firebase_config !== 'undefined' && __firebase_config
-            ? JSON.parse(__firebase_config)
-            : localFirebaseConfig;
+        // Determine the Firebase config to use
+        let firebaseConfigToUse;
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+          // Canvas environment provides __firebase_config
+          firebaseConfigToUse = JSON.parse(__firebase_config);
+          console.log('Using Canvas-provided Firebase config.');
+        } else {
+          // Local development environment, use VITE_ environment variables from .env.local
+          firebaseConfigToUse = {
+            apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+            authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+            projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+            storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: import.meta.env
+              .VITE_FIREBASE_MESSAGING_SENDER_ID,
+            appId: import.meta.env.VITE_FIREBASE_APP_ID,
+          };
+          console.log('Using local .env variables for Firebase config.');
+        }
 
+        // Use __app_id from Canvas environment if available, otherwise fallback to a default
         const currentAppId =
           typeof __app_id !== 'undefined' && __app_id
             ? __app_id
-            : 'flashcard-app';
+            : 'flashcard-app'; // Default app ID for local development
 
         console.log('Firebase config being used:', firebaseConfigToUse);
         console.log(
@@ -162,21 +179,25 @@ const App = () => {
           Object.keys(firebaseConfigToUse).length
         );
 
-        const isLocalConfigValid = Object.values(localFirebaseConfig).every(
-          (value) =>
-            value !== undefined &&
-            value !== null &&
-            value !== '' &&
-            !String(value).startsWith('YOUR_')
+        // Basic validation for the config to ensure it's not empty/placeholder
+        const requiredKeys = [
+          'apiKey',
+          'authDomain',
+          'projectId',
+          'storageBucket',
+          'messagingSenderId',
+          'appId',
+        ];
+        const isConfigComplete = requiredKeys.every(
+          (key) =>
+            firebaseConfigToUse[key] !== undefined &&
+            firebaseConfigToUse[key] !== null &&
+            firebaseConfigToUse[key] !== ''
         );
 
-        if (
-          !firebaseConfigToUse ||
-          Object.keys(firebaseConfigToUse).length < 6 ||
-          (typeof __firebase_config === 'undefined' && !isLocalConfigValid)
-        ) {
+        if (!isConfigComplete) {
           console.error(
-            'Firebase config is missing or incomplete. Please ensure your .env.local file has all VITE_FIREBASE_ variables set and updated with actual keys.'
+            'Firebase config is missing or incomplete. Please ensure Firebase variables are set up correctly in your .env.local file or Canvas environment.'
           );
           console.error('Current config state:', firebaseConfigToUse);
           setLoading(false);
@@ -189,6 +210,7 @@ const App = () => {
 
         setDb(firestoreDb);
         setAuth(firebaseAuth);
+        setIsAuthServiceReady(true); // Firebase Auth service is now ready
 
         // Handle initial authentication for Canvas environment or local anonymous fallback
         try {
@@ -252,6 +274,7 @@ const App = () => {
       } catch (error) {
         console.error('Error initializing Firebase:', error);
         setLoading(false);
+        setIsAuthServiceReady(false); // Ensure auth service is marked not ready on error
       }
     };
 
@@ -327,6 +350,7 @@ const App = () => {
             selectedDeck.name,
             fetchedCards
           );
+          setCurrentCardPage(1); // Reset to first page when deck changes
         },
         (error) => {
           console.error('Error fetching cards:', error);
@@ -456,7 +480,7 @@ const App = () => {
       return;
     }
     try {
-      await addDoc(
+      const docRef = await addDoc(
         collection(
           db,
           `artifacts/${window.currentAppId}/users/${userId}/decks`
@@ -470,7 +494,18 @@ const App = () => {
       setNewDeckName('');
       setIsAddingDeck(false);
       setAuthError(''); // Clear any previous errors
-      console.log('Deck added successfully!');
+      console.log('Deck added successfully with ID:', docRef.id);
+
+      // Automatically select the new deck and open the add card modal
+      const newDeck = {
+        id: docRef.id,
+        name: newDeckName,
+        cardCount: 0,
+        createdAt: new Date().toISOString(),
+      };
+      setSelectedDeck(newDeck);
+      setCurrentPage('decks'); // Ensure we are on the decks page
+      setIsAddingCard(true); // Open the add card modal for the new deck
     } catch (e) {
       console.error('Error adding document: ', e);
       setAuthError(`Error adding deck: ${e.message}`);
@@ -673,12 +708,14 @@ const App = () => {
         },
       };
 
+      // Reverted API key declaration as per user's request
       const apiKey =
         typeof import.meta !== 'undefined' &&
         import.meta.env &&
         import.meta.env.VITE_GEMINI_API_KEY
           ? import.meta.env.VITE_GEMINI_API_KEY
           : '';
+
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
       console.log(
@@ -712,6 +749,7 @@ const App = () => {
               await addCard({ front: card.question, back: card.answer });
             }
           }
+          // Set the first generated card's content to the inputs, then clear for next manual entry
           setNewCardFront(parsedContent[0].question || '');
           setNewCardBack(parsedContent[0].answer || '');
           console.log('AI content generated and added successfully!');
@@ -734,6 +772,14 @@ const App = () => {
       setNewCardBack('Please try again or enter manually.');
     } finally {
       setIsGeneratingAIContent(false);
+      // Close modal and clear all inputs after AI generation attempt
+      setIsAddingCard(false);
+      setEditingCard(null); // Ensure editing state is also reset
+      setNewCardFront('');
+      setNewCardBack('');
+      setAiSubject('');
+      setAiRelatedTopics('');
+      setNumberOfCardsToGenerate(1);
     }
   };
 
@@ -872,6 +918,14 @@ const App = () => {
   // --- Authentication Functions ---
   const handleSignUp = async (email, password) => {
     setAuthError('');
+    // Explicitly check if auth object is available before proceeding
+    if (!auth) {
+      setAuthError(
+        'Authentication service is not fully initialized. Please wait a moment and try again.'
+      );
+      console.error('Auth object is null during signup attempt.');
+      return;
+    }
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       console.log('User signed up successfully!');
@@ -882,6 +936,14 @@ const App = () => {
         setAuthError(
           'Email/Password authentication is not enabled. Please enable it in your Firebase project settings (Authentication -> Sign-in method).'
         );
+      } else if (error.code === 'auth/email-already-in-use') {
+        setAuthError(
+          'This email is already in use. Please try logging in or use a different email.'
+        );
+      } else if (error.code === 'auth/weak-password') {
+        setAuthError(
+          'Password is too weak. Please choose a stronger password.'
+        );
       } else {
         setAuthError(error.message);
       }
@@ -890,6 +952,14 @@ const App = () => {
 
   const handleLogin = async (email, password) => {
     setAuthError('');
+    // Explicitly check if auth object is available before proceeding
+    if (!auth) {
+      setAuthError(
+        'Authentication service is not fully initialized. Please wait a moment and try again.'
+      );
+      console.error('Auth object is null during login attempt.');
+      return;
+    }
     try {
       await signInWithEmailAndPassword(auth, email, password);
       console.log('User logged in successfully!');
@@ -904,6 +974,12 @@ const App = () => {
         setAuthError(
           'Invalid email or password. Please check your credentials.'
         );
+      } else if (error.code === 'auth/user-not-found') {
+        setAuthError(
+          'No user found with this email. Please sign up or check your email.'
+        );
+      } else if (error.code === 'auth/wrong-password') {
+        setAuthError('Incorrect password. Please try again.');
       } else {
         setAuthError(error.message);
       }
@@ -911,6 +987,16 @@ const App = () => {
   };
 
   const handleLogout = async () => {
+    // Check auth before attempting logout
+    if (!auth) {
+      console.error(
+        'Auth object is null during logout attempt. Cannot logout.'
+      );
+      setAuthError(
+        'Authentication service is not ready. Cannot log out at this moment.'
+      );
+      return;
+    }
     try {
       await signOut(auth);
       console.log('User logged out successfully!');
@@ -920,6 +1006,14 @@ const App = () => {
       setAuthError(error.message);
     }
   };
+
+  // Calculate cards for the current page
+  const indexOfLastCard = currentCardPage * cardsPerPage;
+  const indexOfFirstCard = indexOfLastCard - cardsPerPage;
+  const currentCards = cards.slice(indexOfFirstCard, indexOfLastCard);
+
+  // Change page
+  const paginate = (pageNumber) => setCurrentCardPage(pageNumber);
 
   // Show a loading screen while Firebase initializes
   if (loading) {
@@ -932,114 +1026,174 @@ const App = () => {
 
   // --- Main Application UI ---
   return (
-    <div className='min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-inter flex flex-col items-center p-4 sm:p-6 md:p-8'>
-      {/* Removed User ID Display */}
-
+    <div className='min-h-screen bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800 text-gray-900 dark:text-gray-100 font-inter flex flex-col items-center'>
       {/* Header Section */}
-      <header className='w-full max-w-4xl bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 mb-8 flex flex-col sm:flex-row items-center justify-between'>
-        <h1 className='text-3xl sm:text-4xl font-bold text-indigo-700 dark:text-indigo-400 mb-4 sm:mb-0'>
-          Flashcard Pro
-        </h1>
-        <div className='flex space-x-3'>
-          {/* Navigation Buttons */}
+      <header className='w-full bg-white dark:bg-gray-800 shadow-xl p-6 mb-8 flex flex-col sm:flex-row items-center justify-between sticky top-0 z-10 rounded-none'>
+        {' '}
+        {/* Removed rounded-xl */}
+        <div className='flex items-center justify-between w-full sm:w-auto'>
+          {/* Logo and App Name */}
+          <div className='flex items-center'>
+            {isDarkMode ? (
+              <img
+                src='/src/assets/logo-dark.jpg' // Path for dark mode logo
+                alt='Flashcard Pro Logo Dark'
+                className='h-10 w-10 mr-3'
+              />
+            ) : (
+              <img
+                src='/src/assets/logo-light.png' // Path for light mode logo
+                alt='Flashcard Pro Logo Light'
+                className='h-10 w-10 mr-3'
+              />
+            )}
+            <h1 className='text-4xl sm:text-3xl font-extrabold text-indigo-800 dark:text-indigo-400'>
+              Flashcard Pro
+            </h1>
+          </div>
+          {/* Mobile Menu Toggle */}
           <button
-            onClick={() => {
-              setCurrentPage('home');
-              setSelectedDeck(null);
-              setReviewMode(false);
-              setShowDashboard(false);
-            }}
-            className={`flex items-center px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 ${
-              currentPage === 'home'
-                ? 'bg-indigo-700 text-white'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
-            }`}
+            className='sm:hidden p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
-            Home
+            {isMobileMenuOpen ? (
+              <X className='h-6 w-6' />
+            ) : (
+              <Menu className='h-6 w-6' />
+            )}
           </button>
-          {userId && ( // Show Dashboard and Decks only if logged in
-            <>
-              <button
-                onClick={() => {
-                  setCurrentPage('dashboard');
-                  setSelectedDeck(null);
-                  setReviewMode(false);
-                  setShowDashboard(true);
-                }}
-                className={`flex items-center px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 ${
-                  currentPage === 'dashboard'
-                    ? 'bg-purple-700 text-white'
-                    : 'bg-purple-600 text-white hover:bg-purple-700'
-                }`}
-              >
-                <LayoutDashboard className='mr-2 h-5 w-5' /> Dashboard
-              </button>
-              <button
-                onClick={() => {
-                  setCurrentPage('decks');
-                  setSelectedDeck(null);
-                  setReviewMode(false);
-                  setShowDashboard(false);
-                }}
-                className={`flex items-center px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 ${
-                  currentPage === 'decks'
-                    ? 'bg-indigo-700 text-white'
+        </div>
+        {/* Navigation and Theme Toggle (Desktop and Mobile) */}
+        <nav
+          className={`w-full sm:w-auto mt-4 sm:mt-0 ${
+            isMobileMenuOpen ? 'block' : 'hidden'
+          } sm:block`}
+        >
+          <div className='flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3'>
+            {/* Navigation Buttons */}
+            <button
+              onClick={() => {
+                setCurrentPage('home');
+                setSelectedDeck(null);
+                setReviewMode(false);
+                setShowDashboard(false);
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex items-center px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center
+                ${
+                  currentPage === 'home'
+                    ? 'bg-indigo-700 text-white shadow-lg'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700'
                 }`}
-              >
-                <BookOpen className='mr-2 h-5 w-5' /> Your Decks
-              </button>
-            </>
-          )}
-          {userId ? ( // Show Logout if logged in
-            <button
-              onClick={handleLogout}
-              className='flex items-center px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105'
             >
-              <LogOut className='mr-2 h-5 w-5' /> Logout
+              Home
             </button>
-          ) : (
-            // Show Login/Signup if not logged in
-            <>
+            {userId && ( // Show Dashboard and Decks only if logged in
+              <>
+                <button
+                  onClick={() => {
+                    setCurrentPage('dashboard');
+                    setSelectedDeck(null);
+                    setReviewMode(false);
+                    setShowDashboard(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center
+                    ${
+                      currentPage === 'dashboard'
+                        ? 'bg-purple-700 text-white shadow-lg'
+                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                    }`}
+                >
+                  <LayoutDashboard className='mr-2 h-5 w-5' /> Dashboard
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentPage('decks');
+                    setSelectedDeck(null);
+                    setReviewMode(false);
+                    setShowDashboard(false);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center
+                    ${
+                      currentPage === 'decks'
+                        ? 'bg-indigo-700 text-white shadow-lg'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                >
+                  <BookOpen className='mr-2 h-5 w-5' /> Your Decks
+                </button>
+              </>
+            )}
+            {userId ? ( // Show Logout if logged in
               <button
-                onClick={() => {
-                  setCurrentPage('login');
-                  setSelectedDeck(null);
-                  setReviewMode(false);
-                  setShowDashboard(false);
-                }}
-                className={`flex items-center px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 ${
-                  currentPage === 'login'
-                    ? 'bg-gray-700 text-white'
-                    : 'bg-gray-600 text-white hover:bg-gray-700'
-                }`}
+                onClick={handleLogout}
+                className='flex items-center px-5 py-2.5 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center'
               >
-                <LogIn className='mr-2 h-5 w-5' /> Login
+                <LogOut className='mr-2 h-5 w-5' /> Logout
               </button>
-              <button
-                onClick={() => {
-                  setCurrentPage('signup');
-                  setSelectedDeck(null);
-                  setReviewMode(false);
-                  setShowDashboard(false);
-                }}
-                className={`flex items-center px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 ${
-                  currentPage === 'signup'
-                    ? 'bg-gray-700 text-white'
-                    : 'bg-gray-600 text-white hover:bg-gray-700'
-                }`}
-              >
-                <UserPlus className='mr-2 h-5 w-5' /> Signup
-              </button>
-            </>
-          )}
-        </div>
+            ) : (
+              // Show Login/Signup if not logged in
+              <>
+                <button
+                  onClick={() => {
+                    setCurrentPage('login');
+                    setSelectedDeck(null);
+                    setReviewMode(false);
+                    setShowDashboard(false);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center
+                    ${
+                      currentPage === 'login'
+                        ? 'bg-gray-700 text-white shadow-lg'
+                        : 'bg-gray-600 text-white hover:bg-gray-700'
+                    }`}
+                >
+                  <LogIn className='mr-2 h-5 w-5' /> Login
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentPage('signup');
+                    setSelectedDeck(null);
+                    setReviewMode(false);
+                    setShowDashboard(false);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center
+                    ${
+                      currentPage === 'signup'
+                        ? 'bg-gray-700 text-white shadow-lg'
+                        : 'bg-gray-600 text-white hover:bg-gray-700'
+                    }`}
+                >
+                  <UserPlus className='mr-2 h-5 w-5' /> Signup
+                </button>
+              </>
+            )}
+            {/* Theme Toggle Button */}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className='flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl shadow-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-300 transform hover:scale-105 font-medium w-full sm:w-auto justify-center'
+              title={
+                isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'
+              }
+            >
+              {isDarkMode ? (
+                <Sun className='h-5 w-5' />
+              ) : (
+                <Moon className='h-5 w-5' />
+              )}
+            </button>
+          </div>
+        </nav>
       </header>
 
       {/* Auth Error Display */}
       {authError && (
         <div
-          className='w-full max-w-4xl bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl relative mb-4'
+          className='w-full max-w-7xl bg-red-100 dark:bg-red-900 shadow-lg text-red-700 dark:text-red-200 px-4 py-3 rounded-xl relative mb-6 animate-fade-in'
           role='alert'
         >
           <strong className='font-bold'>Authentication Error:</strong>
@@ -1063,32 +1217,32 @@ const App = () => {
 
       {/* Add New Deck Modal/Form */}
       {isAddingDeck && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
-            <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+        <div className='fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in'>
+          <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md'>
+            <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100'>
               Create New Deck
             </h2>
             <input
               type='text'
-              placeholder='Deck Name'
+              placeholder='Enter Deck Name'
               value={newDeckName}
               onChange={(e) => setNewDeckName(e.target.value)}
-              className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
-            <div className='flex justify-end space-x-3'>
+            <div className='flex justify-end space-x-4'>
               <button
                 onClick={() => {
                   setIsAddingDeck(false);
                   setNewDeckName(''); // Clear input on cancel
                   setAuthError(''); // Clear any auth errors
                 }}
-                className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
+                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
               >
                 Cancel
               </button>
               <button
                 onClick={addDeck}
-                className='px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors'
+                className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors duration-200 font-medium shadow-md'
               >
                 Create Deck
               </button>
@@ -1099,30 +1253,32 @@ const App = () => {
 
       {/* Delete Deck Confirmation Modal */}
       {showDeleteDeckConfirm && deckToDelete && (
-        <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-          <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
-            <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+        <div className='fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in'>
+          <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md'>
+            <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100'>
               Confirm Deletion
             </h2>
-            <p className='text-gray-700 dark:text-gray-300 mb-6'>
+            <p className='text-gray-700 dark:text-gray-300 mb-8 text-lg'>
               Are you sure you want to delete the deck "
-              <span className='font-bold'>{deckToDelete.name}</span>"? This
-              action cannot be undone and will delete all cards within this
-              deck.
+              <span className='font-bold text-indigo-600 dark:text-indigo-400'>
+                {deckToDelete.name}
+              </span>
+              "? This action cannot be undone and will delete all cards within
+              this deck.
             </p>
-            <div className='flex justify-end space-x-3'>
+            <div className='flex justify-end space-x-4'>
               <button
                 onClick={() => {
                   setShowDeleteDeckConfirm(false);
                   setDeckToDelete(null);
                 }}
-                className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
+                className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
               >
                 Cancel
               </button>
               <button
                 onClick={() => deleteDeck(deckToDelete.id)}
-                className='px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors'
+                className='px-6 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors duration-200 font-medium shadow-md'
               >
                 Delete
               </button>
@@ -1132,62 +1288,73 @@ const App = () => {
       )}
 
       {/* Main Content Area - Conditional Rendering based on currentPage */}
-      <main
-        key={currentPage}
-        className='w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-8'
-      >
+      <main className='w-full max-w-7xl grid grid-cols-1 md:grid-cols-3 gap-8 flex-grow px-4 sm:px-6 md:px-8'>
         {(() => {
           switch (currentPage) {
             case 'home':
               return <HomePage />;
             case 'login':
-              return <AuthForm type='login' onAuth={handleLogin} />;
+              return (
+                <AuthForm
+                  type='login'
+                  onAuth={handleLogin}
+                  authError={authError}
+                  isAuthServiceReady={isAuthServiceReady}
+                />
+              );
             case 'signup':
-              return <AuthForm type='signup' onAuth={handleSignUp} />;
+              return (
+                <AuthForm
+                  type='signup'
+                  onAuth={handleSignUp}
+                  authError={authError}
+                  isAuthServiceReady={isAuthServiceReady}
+                />
+              );
             case 'dashboard':
               // Dashboard content
               return (
-                <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6'>
-                  <h2 className='text-3xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center'>
-                    <LayoutDashboard className='mr-3 h-7 w-7 text-purple-500' />{' '}
+                <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-xl rounded-2xl p-8 animate-fade-in'>
+                  <h2 className='text-3xl font-bold mb-8 text-gray-900 dark:text-gray-100 flex items-center'>
+                    <LayoutDashboard className='mr-3 h-8 w-8 text-purple-500' />{' '}
                     Overall Dashboard
                   </h2>
                   <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6'>
-                    <div className='bg-blue-50 dark:bg-blue-900 rounded-lg p-5 text-center shadow-md'>
-                      <p className='text-4xl font-bold text-blue-600 dark:text-blue-300'>
+                    <div className='bg-blue-50 dark:bg-blue-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                      <p className='text-5xl font-extrabold text-blue-700 dark:text-blue-300'>
                         {totalDecksOverall}
                       </p>
-                      <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                      <p className='text-md text-gray-600 dark:text-gray-400 mt-3'>
                         Total Decks
                       </p>
                     </div>
-                    <div className='bg-green-50 dark:bg-green-900 rounded-lg p-5 text-center shadow-md'>
-                      <p className='text-4xl font-bold text-green-600 dark:text-green-300'>
+                    <div className='bg-green-50 dark:bg-green-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                      <p className='text-5xl font-extrabold text-green-700 dark:text-green-300'>
                         {totalCardsOverall}
                       </p>
-                      <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                      <p className='text-md text-gray-600 dark:text-gray-400 mt-3'>
                         Total Cards
                       </p>
                     </div>
-                    <div className='bg-red-50 dark:bg-red-900 rounded-lg p-5 text-center shadow-md'>
-                      <p className='text-4xl font-bold text-red-600 dark:text-red-300'>
+                    <div className='bg-red-50 dark:bg-red-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                      <p className='text-5xl font-extrabold text-red-600 dark:text-red-300'>
                         {totalDueCardsOverall}
                       </p>
-                      <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                      <p className='text-md text-gray-600 dark:text-gray-400 mt-3'>
                         Cards Due Now
                       </p>
                     </div>
-                    <div className='bg-purple-50 dark:bg-purple-900 rounded-lg p-5 text-center shadow-md'>
-                      <p className='text-4xl font-bold text-purple-600 dark:text-purple-300'>
+                    <div className='bg-purple-50 dark:bg-purple-900 rounded-xl p-6 text-center shadow-md flex flex-col items-center justify-center py-8'>
+                      <p className='text-5xl font-extrabold text-purple-700 dark:text-purple-300'>
                         {totalLearnedCardsOverall}
                       </p>
-                      <p className='text-sm text-gray-600 dark:text-gray-400 mt-2'>
+                      <p className='text-md text-gray-600 dark:text-gray-400 mt-3'>
                         Cards Learned
                       </p>
                     </div>
                   </div>
                   {totalDecksOverall === 0 && (
-                    <p className='text-center text-gray-600 dark:text-gray-400 mt-8 text-lg'>
+                    <p className='text-center text-gray-600 dark:text-gray-400 mt-10 text-xl'>
                       Start by adding a new deck to see your progress here!
                     </p>
                   )}
@@ -1198,7 +1365,7 @@ const App = () => {
               return (
                 <>
                   {/* Deck List Section (Left Column) */}
-                  <section className='md:col-span-1 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 h-fit'>
+                  <section className='md:col-span-1 bg-white dark:bg-gray-800 shadow-xl rounded-2xl p-6 h-fit animate-fade-in'>
                     <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center'>
                       <BookOpen className='mr-3 h-6 w-6 text-indigo-500' /> Your
                       Decks
@@ -1214,38 +1381,40 @@ const App = () => {
                           console.log('Add New Deck button clicked!');
                           setIsAddingDeck(true);
                         }}
-                        className='flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-300 transform hover:scale-105 mb-4 w-full justify-center'
+                        className='flex items-center px-5 py-2.5 bg-indigo-600 text-white rounded-xl shadow-md hover:bg-indigo-700 transition-all duration-300 transform hover:scale-105 mb-6 w-full justify-center font-medium'
                       >
                         <PlusCircle className='mr-2 h-5 w-5' /> Add New Deck
                       </button>
                     ) : (
-                      <p className='text-gray-600 dark:text-gray-400 mb-4'>
+                      <p className='text-gray-600 dark:text-gray-400 mb-4 text-center'>
                         Log in to create and manage decks.
                       </p>
                     )}
                     {decks.length === 0 ? (
-                      <p className='text-gray-600 dark:text-gray-400'>
+                      <p className='text-gray-600 dark:text-gray-400 text-center'>
                         No decks yet. Add one to get started!
                       </p>
                     ) : (
-                      <ul className='space-y-3'>
+                      <ul className='space-y-4'>
                         {decks.map((deck) => (
                           <li
                             key={deck.id}
-                            className='flex items-center justify-between'
+                            className='flex items-center justify-between gap-3'
                           >
+                            {' '}
+                            {/* Added gap-3 here */}
                             <button
                               onClick={() => {
                                 setSelectedDeck(deck);
                                 setReviewMode(false);
                               }}
-                              className={`flex-grow text-left px-4 py-3 rounded-l-lg
+                              className={`flex-grow text-left px-4 py-3 rounded-l-xl
                                 ${
                                   selectedDeck?.id === deck.id
-                                    ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold'
+                                    ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-semibold shadow-inner'
                                     : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200'
                                 }
-                                transition-colors duration-200 transform hover:scale-[1.02] origin-left`}
+                                transition-colors duration-200 transform hover:scale-[1.02] origin-left text-lg`}
                             >
                               <span>{deck.name}</span>
                               <span className='text-sm text-gray-500 dark:text-gray-400 ml-2'>
@@ -1259,7 +1428,7 @@ const App = () => {
                                   setDeckToDelete(deck);
                                   setShowDeleteDeckConfirm(true);
                                 }}
-                                className='p-3 bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-200 rounded-r-lg hover:bg-red-200 dark:hover:bg-red-700 transition-colors transform hover:scale-[1.02] origin-right'
+                                className='p-3 bg-red-100 dark:bg-red-800 text-red-600 dark:text-red-200 rounded-r-xl hover:bg-red-200 dark:hover:bg-red-700 transition-colors transform hover:scale-[1.02] origin-right shadow-md'
                                 title='Delete Deck'
                               >
                                 <Trash2 className='h-5 w-5' />
@@ -1272,7 +1441,7 @@ const App = () => {
                   </section>
 
                   {/* Card List / Review Section (Right Column) */}
-                  <section className='md:col-span-2 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6'>
+                  <section className='md:col-span-2 bg-white dark:bg-gray-800 shadow-xl rounded-2xl p-8 animate-fade-in'>
                     {selectedDeck ? (
                       <>
                         <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100 flex items-center justify-between'>
@@ -1289,14 +1458,14 @@ const App = () => {
                               <div className='flex space-x-3'>
                                 <button
                                   onClick={() => setIsAddingCard(true)}
-                                  className='flex items-center px-4 py-2 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                                  className='flex items-center px-4 py-2 bg-green-600 text-white rounded-xl shadow-md hover:bg-green-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                                 >
                                   <PlusCircle className='mr-2 h-4 w-4' /> Add
                                   Card
                                 </button>
                                 <button
                                   onClick={startReviewSession}
-                                  className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                                  className='flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                                 >
                                   <PlayCircle className='mr-2 h-4 w-4' /> Start
                                   Review
@@ -1310,7 +1479,7 @@ const App = () => {
                                 setReviewCards([]);
                                 setCurrentReviewCardIndex(0);
                               }}
-                              className='flex items-center px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm'
+                              className='flex items-center px-4 py-2 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 text-sm font-medium'
                             >
                               <XCircle className='mr-2 h-4 w-4 inline-block' />{' '}
                               End Review
@@ -1320,28 +1489,28 @@ const App = () => {
 
                         {/* User Progress Metrics for the selected deck */}
                         {!reviewMode && (
-                          <div className='flex justify-around items-center bg-gray-50 dark:bg-gray-700 rounded-lg p-3 mb-6 shadow-inner'>
+                          <div className='flex justify-around items-center bg-gray-50 dark:bg-gray-700 rounded-xl p-4 mb-8 shadow-inner'>
                             <div className='text-center'>
-                              <p className='text-xl font-bold text-indigo-600 dark:text-indigo-300'>
+                              <p className='text-2xl font-bold text-indigo-600 dark:text-indigo-300'>
                                 {selectedDeck.cardCount || 0}
                               </p>
-                              <p className='text-sm text-gray-600 dark:text-gray-400'>
+                              <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
                                 Total Cards
                               </p>
                             </div>
                             <div className='text-center'>
-                              <p className='text-xl font-bold text-red-600 dark:text-red-300'>
+                              <p className='text-2xl font-bold text-red-600 dark:text-red-300'>
                                 {dueCardsCount}
                               </p>
-                              <p className='text-sm text-gray-600 dark:text-gray-400'>
+                              <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
                                 Due Now
                               </p>
                             </div>
                             <div className='text-center'>
-                              <p className='text-xl font-bold text-green-600 dark:text-green-300'>
+                              <p className='text-2xl font-bold text-green-600 dark:text-green-300'>
                                 {learnedCardsCount}
                               </p>
-                              <p className='text-sm text-gray-600 dark:text-gray-400'>
+                              <p className='text-sm text-gray-600 dark:text-gray-400 mt-1'>
                                 Cards Learned
                               </p>
                             </div>
@@ -1350,9 +1519,9 @@ const App = () => {
 
                         {/* Add/Edit Card Modal/Form */}
                         {(isAddingCard || editingCard) && (
-                          <div className='fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50'>
-                            <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md'>
-                              <h2 className='text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100'>
+                          <div className='fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-fade-in'>
+                            <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-md'>
+                              <h2 className='text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100'>
                                 {editingCard ? 'Edit Card' : 'Add New Card'}
                               </h2>
                               <textarea
@@ -1361,20 +1530,21 @@ const App = () => {
                                 onChange={(e) =>
                                   setNewCardFront(e.target.value)
                                 }
-                                className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                                className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                 rows='3'
                               ></textarea>
                               <textarea
                                 placeholder='Back of card (Answer)'
                                 value={newCardBack}
                                 onChange={(e) => setNewCardBack(e.target.value)}
-                                className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                                className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                 rows='3'
                               ></textarea>
 
                               {/* AI Content Generation Inputs */}
-                              <div className='mt-4 border-t border-gray-200 dark:border-gray-600 pt-4'>
-                                <p className='text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100'>
+                              <div className='mt-4 border-t border-gray-200 dark:border-gray-600 pt-6'>
+                                <p className='text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100 flex items-center'>
+                                  <Brain className='mr-2 h-5 w-5 text-purple-500' />{' '}
                                   Generate with AI:
                                 </p>
                                 <input
@@ -1382,7 +1552,7 @@ const App = () => {
                                   placeholder="Subject (e.g., 'History of Rome')"
                                   value={aiSubject}
                                   onChange={(e) => setAiSubject(e.target.value)}
-                                  className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                 />
                                 <textarea
                                   placeholder="Related topics (comma-separated, e.g., 'Julius Caesar, Roman Empire')"
@@ -1390,7 +1560,7 @@ const App = () => {
                                   onChange={(e) =>
                                     setAiRelatedTopics(e.target.value)
                                   }
-                                  className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-3 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y'
+                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 resize-y placeholder-gray-500 dark:placeholder-gray-400 text-lg'
                                   rows='2'
                                 ></textarea>
                                 <input
@@ -1410,7 +1580,7 @@ const App = () => {
                                   }
                                   min='1'
                                   max='5'
-                                  className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg mb-4 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                                  className='w-full px-4 py-3 shadow-sm rounded-lg mb-6 focus:ring-2 focus:ring-purple-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-lg'
                                 />
                               </div>
 
@@ -1420,7 +1590,7 @@ const App = () => {
                                 disabled={
                                   isGeneratingAIContent || !aiSubject.trim()
                                 }
-                                className={`flex items-center justify-center w-full px-4 py-2 rounded-lg shadow-md transition-colors duration-300 transform hover:scale-105 mb-4
+                                className={`flex items-center justify-center w-full px-6 py-3 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 mb-6 font-medium text-lg
                                   ${
                                     isGeneratingAIContent || !aiSubject.trim()
                                       ? 'bg-purple-400 cursor-not-allowed'
@@ -1453,13 +1623,13 @@ const App = () => {
                                   </>
                                 ) : (
                                   <>
-                                    <Brain className='mr-2 h-5 w-5' /> Generate
-                                    with AI
+                                    <Sparkles className='mr-2 h-5 w-5' />{' '}
+                                    Generate with AI
                                   </>
                                 )}
                               </button>
 
-                              <div className='flex justify-end space-x-3'>
+                              <div className='flex justify-end space-x-4'>
                                 <button
                                   onClick={() => {
                                     setIsAddingCard(false);
@@ -1470,7 +1640,7 @@ const App = () => {
                                     setAiRelatedTopics('');
                                     setNumberOfCardsToGenerate(1);
                                   }}
-                                  className='px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-700 transition-colors'
+                                  className='px-6 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-medium'
                                 >
                                   Cancel
                                 </button>
@@ -1498,7 +1668,7 @@ const App = () => {
                                     setAiRelatedTopics('');
                                     setNumberOfCardsToGenerate(1);
                                   }}
-                                  className='px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors'
+                                  className='px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors duration-200 font-medium shadow-md'
                                 >
                                   {editingCard ? 'Update Card' : 'Add Card'}
                                 </button>
@@ -1515,8 +1685,9 @@ const App = () => {
                                 card={reviewCards[currentReviewCardIndex]}
                                 isReviewMode={true}
                                 onReview={handleReview}
+                                viewMode={cardViewMode} // Pass view mode to Flashcard component
                               />
-                              <div className='mt-4 text-center text-gray-600 dark:text-gray-400'>
+                              <div className='mt-6 text-center text-gray-600 dark:text-gray-400 text-lg'>
                                 <p>
                                   Reviewing card {currentReviewCardIndex + 1} of{' '}
                                   {reviewCards.length}
@@ -1534,7 +1705,7 @@ const App = () => {
                                   setReviewCards([]);
                                   setCurrentReviewCardIndex(0);
                                 }}
-                                className='mt-4 px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105'
+                                className='mt-6 px-6 py-2.5 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-colors duration-300 transform hover:scale-105 font-medium'
                               >
                                 <XCircle className='mr-2 h-4 w-4 inline-block' />{' '}
                                 End Review
@@ -1543,21 +1714,83 @@ const App = () => {
                           )
                         ) : // Card List UI
                         cards.length === 0 ? (
-                          <p className='text-gray-600 dark:text-gray-400'>
+                          <p className='text-gray-600 dark:text-gray-400 text-center'>
                             No cards in this deck. Add one!
                           </p>
                         ) : (
-                          <div className='grid grid-cols-1 gap-4'>
-                            {cards.map((card) => (
-                              <Flashcard
-                                key={card.id}
-                                card={card}
-                                onDelete={() => deleteCard(card.id)}
-                                onEdit={() => startEditCard(card)}
-                                isReviewMode={false}
-                              />
-                            ))}
-                          </div>
+                          <>
+                            {/* View Mode Toggle Buttons */}
+                            <div className='flex justify-end mb-4 space-x-2'>
+                              <button
+                                onClick={() => setCardViewMode('grid')}
+                                className={`p-2 rounded-xl transition-colors ${
+                                  cardViewMode === 'grid'
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                                title='Grid View'
+                              >
+                                <Grid className='h-5 w-5' />
+                              </button>
+                              <button
+                                onClick={() => setCardViewMode('list')}
+                                className={`p-2 rounded-xl transition-colors ${
+                                  cardViewMode === 'list'
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                                title='List View'
+                              >
+                                <List className='h-5 w-5' />
+                              </button>
+                            </div>
+
+                            <div
+                              className={`${
+                                cardViewMode === 'grid'
+                                  ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6'
+                                  : 'space-y-4'
+                              }`}
+                            >
+                              {currentCards.map((card) => (
+                                <Flashcard
+                                  key={card.id}
+                                  card={card}
+                                  onDelete={() => deleteCard(card.id)}
+                                  onEdit={() => startEditCard(card)}
+                                  isReviewMode={false}
+                                  viewMode={cardViewMode} // Pass view mode to Flashcard component
+                                />
+                              ))}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            {cards.length > cardsPerPage && (
+                              <div className='flex justify-center mt-8 space-x-2'>
+                                {Array.from(
+                                  {
+                                    length: Math.ceil(
+                                      cards.length / cardsPerPage
+                                    ),
+                                  },
+                                  (_, i) => (
+                                    <button
+                                      key={i + 1}
+                                      onClick={() => paginate(i + 1)}
+                                      className={`px-4 py-2 rounded-xl font-medium transition-colors duration-200
+                                        ${
+                                          currentCardPage === i + 1
+                                            ? 'bg-indigo-600 text-white shadow-md'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                        }`}
+                                    >
+                                      {i + 1}
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     ) : (
@@ -1578,7 +1811,9 @@ const App = () => {
       </main>
 
       {/* Footer */}
-      <footer className='w-full max-w-4xl mt-8 text-center text-gray-600 dark:text-gray-400 text-sm'>
+      <footer className='w-full bg-white dark:bg-gray-800 shadow-xl mt-12 text-center text-gray-600 dark:text-gray-400 text-sm py-4 rounded-none'>
+        {' '}
+        {/* Removed rounded-xl */}
         <p>
           &copy; {new Date().getFullYear()} Flashcard Pro. All rights reserved.
         </p>
@@ -1590,19 +1825,19 @@ const App = () => {
 // --- HomePage Component ---
 const HomePage = () => {
   return (
-    <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 text-center'>
+    <section className='md:col-span-3 bg-white dark:bg-gray-800 shadow-xl rounded-2xl p-8 text-center animate-fade-in'>
       {/* Hero Section */}
-      <div className='bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl p-8 mb-8 shadow-xl'>
-        <h2 className='text-4xl md:text-5xl font-extrabold mb-4 leading-tight'>
+      <div className='bg-gradient-to-r from-indigo-600 to-purple-700 text-white rounded-xl p-10 mb-10 shadow-2xl'>
+        <h2 className='text-5xl md:text-6xl font-extrabold mb-5 leading-tight tracking-tight'>
           Master Anything with Flashcard Pro!
         </h2>
-        <p className='text-lg md:text-xl mb-6 opacity-90'>
+        <p className='text-xl md:text-2xl mb-8 opacity-95 max-w-3xl mx-auto'>
           Your intelligent companion for effective learning and lasting memory.
         </p>
-        <div className='flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4'>
+        <div className='flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6'>
           <a
             href='#get-started' // Scroll to "Ready to start learning?" section
-            className='inline-flex items-center px-6 py-3 bg-white text-indigo-700 font-bold rounded-lg shadow-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105'
+            className='inline-flex items-center px-8 py-4 bg-white text-indigo-700 font-bold rounded-xl shadow-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 text-lg'
             onClick={(e) => {
               e.preventDefault();
               document
@@ -1610,23 +1845,23 @@ const HomePage = () => {
                 .scrollIntoView({ behavior: 'smooth' });
             }}
           >
-            <PlayCircle className='mr-2 h-6 w-6' /> Get Started Now
+            <PlayCircle className='mr-3 h-6 w-6' /> Get Started Now
           </a>
         </div>
       </div>
 
-      <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8'>
+      <h3 className='text-4xl font-bold text-gray-900 dark:text-gray-100 mb-10'>
         Why Choose Flashcard Pro?
       </h3>
 
-      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left mb-12'>
+      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-left mb-16'>
         {/* Feature 1: Spaced Repetition */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <Brain className='text-blue-600 dark:text-blue-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-blue-600 dark:text-blue-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <Brain className='text-blue-600 dark:text-blue-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-blue-700 dark:text-blue-300 mb-3'>
             Smart Learning with SRS
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Utilize the proven SM-2 spaced repetition algorithm to review cards
             at optimal intervals, maximizing retention and minimizing study
             time.
@@ -1634,12 +1869,12 @@ const HomePage = () => {
         </div>
 
         {/* Feature 2: AI Content Generation */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <Sparkles className='text-purple-600 dark:text-purple-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-purple-600 dark:text-purple-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <Sparkles className='text-purple-600 dark:text-purple-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-purple-700 dark:text-purple-300 mb-3'>
             AI-Powered Card Creation
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Effortlessly generate flashcard questions and answers on any subject
             with our integrated Google Gemini AI, saving you time and boosting
             creativity.
@@ -1647,98 +1882,104 @@ const HomePage = () => {
         </div>
 
         {/* Feature 3: Organized Deck & Card Management */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <FolderDot className='text-green-600 dark:text-green-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-green-600 dark:text-green-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <FolderDot className='text-green-600 dark:text-green-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-green-700 dark:text-green-300 mb-3'>
             Intuitive Organization
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Create, manage, and categorize your flashcards into custom decks,
             keeping your study materials perfectly organized and accessible.
           </p>
         </div>
 
         {/* Feature 4: Progress Tracking */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <TrendingUp className='text-orange-600 dark:text-orange-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-orange-600 dark:text-orange-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <TrendingUp className='text-orange-600 dark:text-orange-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-orange-700 dark:text-orange-300 mb-3'>
             Track Your Growth
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Monitor your learning progress with real-time statistics, including
             total decks, cards, and cards due, helping you stay motivated.
           </p>
         </div>
 
         {/* Feature 5: Responsive & Real-time */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <Zap className='text-red-600 dark:text-red-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-red-600 dark:text-red-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <Zap className='text-red-600 dark:text-red-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-red-700 dark:text-red-300 mb-3'>
             Seamless & Responsive
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Enjoy a fluid experience on any device with our responsive design
             and real-time data synchronization powered by Firebase.
           </p>
         </div>
 
         {/* Feature 6: Secure & Reliable */}
-        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-inner flex flex-col items-center text-center'>
-          <User className='text-indigo-600 dark:text-indigo-300 mb-4 h-12 w-12' />
-          <h4 className='text-xl font-bold text-indigo-600 dark:text-indigo-300 mb-2'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-7 rounded-xl shadow-inner flex flex-col items-center text-center'>
+          <User className='text-indigo-600 dark:text-indigo-300 mb-5 h-14 w-14' />
+          <h4 className='text-2xl font-bold text-indigo-700 dark:text-indigo-300 mb-3'>
             Secure User Experience
           </h4>
-          <p className='text-gray-800 dark:text-gray-200'>
+          <p className='text-gray-800 dark:text-gray-200 text-lg'>
             Your data is safe with robust Firebase Authentication and Firestore,
             ensuring a secure and reliable learning environment.
           </p>
         </div>
       </div>
 
-      <h3 className='text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8'>
+      <h3 className='text-4xl font-bold text-gray-900 dark:text-gray-100 mb-10'>
         What's Next for Flashcard Pro?
       </h3>
-      <div className='grid grid-cols-1 md:grid-cols-2 gap-6 text-left mb-12'>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner flex items-start'>
-          <Sparkles className='text-purple-500 mr-3 mt-1 h-6 w-6 flex-shrink-0' />
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-8 text-left mb-16'>
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-inner flex items-start'>
+          <Sparkles className='text-purple-500 mr-4 mt-1 h-7 w-7 flex-shrink-0' />
           <div>
-            <h4 className='text-xl font-bold text-purple-500 mb-2'>
+            <h4 className='text-2xl font-bold text-purple-600 dark:text-purple-300 mb-3'>
               Enhanced AI Capabilities
             </h4>
-            <ul className='list-inside text-gray-800 dark:text-gray-200 space-y-1'>
+            <ul className='list-none text-gray-800 dark:text-gray-200 space-y-2 text-lg'>
               <li>
-                <Lightbulb className='inline-block h-4 w-4 mr-1' /> Smart
-                Suggestions - AI-driven hints for card answers during creation.
+                <Lightbulb className='inline-block h-5 w-5 mr-2 text-purple-400' />{' '}
+                <strong className='font-bold'>Smart Suggestions</strong> -
+                AI-driven hints for card answers during creation.
               </li>
               <li>
-                <FileText className='inline-block h-4 w-4 mr-1' /> Content
-                Summarization - Generate concise flashcards from longer texts.
+                <FileText className='inline-block h-5 w-5 mr-2 text-purple-400' />{' '}
+                <strong className='font-bold'>Content Summarization</strong> -
+                Generate concise flashcards from longer texts.
               </li>
               <li>
-                <Compass className='inline-block h-4 w-4 mr-1' /> Adaptive
-                Learning Paths - AI-powered personalized study recommendations.
+                <Compass className='inline-block h-5 w-5 mr-2 text-purple-400' />{' '}
+                <strong className='font-bold'>Adaptive Learning Paths</strong> -
+                AI-powered personalized study recommendations.
               </li>
             </ul>
           </div>
         </div>
-        <div className='bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner flex items-start'>
-          <Settings className='text-orange-500 mr-3 mt-1 h-6 w-6 flex-shrink-0' />
+        <div className='bg-gray-50 dark:bg-gray-700 p-6 rounded-xl shadow-inner flex items-start'>
+          <Settings className='text-orange-500 mr-4 mt-1 h-7 w-7 flex-shrink-0' />
           <div>
-            <h4 className='text-xl font-bold text-orange-500 mb-2'>
+            <h4 className='text-2xl font-bold text-orange-600 dark:text-orange-300 mb-3'>
               Prospective Enhancements
             </h4>
-            <ul className='list-inside text-gray-800 dark:text-gray-200 space-y-1'>
+            <ul className='list-none text-gray-800 dark:text-gray-200 space-y-2 text-lg'>
               <li>
-                <FileText className='inline-block h-4 w-4 mr-1' /> Deck
-                Import/Export - Share and backup your decks easily.
+                <FileText className='inline-block h-5 w-5 mr-2 text-orange-400' />{' '}
+                <strong className='font-bold'>Deck Import/Export</strong> -
+                Share and backup your decks easily.
               </li>
               <li>
-                <Share2 className='inline-block h-4 w-4 mr-1' /> Deck Sharing -
+                <Share2 className='inline-block h-5 w-5 mr-2 text-orange-400' />{' '}
+                <strong className='font-bold'>Deck Sharing</strong> -
                 Collaborate or share knowledge with others.
               </li>
               <li>
-                <Type className='inline-block h-4 w-4 mr-1' /> Rich Text Editor
-                - Format card content with bold, italics, and more.
+                <Type className='inline-block h-5 w-5 mr-2 text-orange-400' />{' '}
+                <strong className='font-bold'>Rich Text Editor</strong> - Format
+                card content with bold, italics, and more.
               </li>
             </ul>
           </div>
@@ -1747,10 +1988,10 @@ const HomePage = () => {
 
       <div
         id='get-started'
-        className='mt-8 text-lg text-gray-700 dark:text-gray-300'
+        className='mt-12 text-xl text-gray-700 dark:text-gray-300'
       >
-        <p className='mb-4'>Ready to revolutionize your learning journey?</p>
-        <p className='font-bold text-indigo-600 dark:text-indigo-400'>
+        <p className='mb-5'>Ready to revolutionize your learning journey?</p>
+        <p className='font-extrabold text-indigo-700 dark:text-indigo-400 text-2xl'>
           Login or Sign Up to create your first deck and experience the power of
           Flashcard Pro!
         </p>
@@ -1760,15 +2001,25 @@ const HomePage = () => {
 };
 
 // --- AuthForm Component ---
-const AuthForm = ({ type, onAuth }) => {
+const AuthForm = ({ type, onAuth, authError, isAuthServiceReady }) => {
+  // Added isAuthServiceReady prop
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
 
+  // Clear local message when authError prop changes from parent
+  useEffect(() => {
+    if (authError) {
+      setMessage(authError);
+    } else {
+      setMessage('');
+    }
+  }, [authError]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    setMessage('');
+    setMessage(''); // Clear previous local messages
     if (type === 'signup' && password !== confirmPassword) {
       setMessage('Passwords do not match!');
       return;
@@ -1777,26 +2028,26 @@ const AuthForm = ({ type, onAuth }) => {
   };
 
   return (
-    <section className='md:col-span-3 flex items-center justify-center p-4'>
-      <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 w-full max-w-md'>
-        <h2 className='text-3xl font-bold mb-6 text-center text-gray-900 dark:text-gray-100'>
-          {type === 'login' ? 'Login' : 'Sign Up'}
+    <section className='md:col-span-3 flex items-center justify-center p-4 animate-fade-in'>
+      <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-10 w-full max-w-md'>
+        <h2 className='text-3xl font-bold mb-8 text-center text-gray-900 dark:text-gray-100'>
+          {type === 'login' ? 'Login to Your Account' : 'Create Your Account'}
         </h2>
         {message && (
           <div
-            className='bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4'
+            className='bg-red-100 dark:bg-red-900 shadow-lg text-red-700 dark:text-red-200 px-4 py-3 rounded-lg mb-6 animate-fade-in'
             role='alert'
           >
             {message}
           </div>
         )}
-        <form onSubmit={handleSubmit} className='space-y-5'>
+        <form onSubmit={handleSubmit} className='space-y-6'>
           <div>
             <label
               htmlFor='email'
-              className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'
+              className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'
             >
-              Email
+              Email Address
             </label>
             <input
               type='email'
@@ -1805,13 +2056,13 @@ const AuthForm = ({ type, onAuth }) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
           </div>
           <div>
             <label
               htmlFor='password'
-              className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'
+              className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'
             >
               Password
             </label>
@@ -1822,14 +2073,14 @@ const AuthForm = ({ type, onAuth }) => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
             />
           </div>
           {type === 'signup' && (
             <div>
               <label
                 htmlFor='confirm-password'
-                className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'
+                className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'
               >
                 Confirm Password
               </label>
@@ -1840,13 +2091,19 @@ const AuthForm = ({ type, onAuth }) => {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className='w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                className='w-full px-4 py-3 shadow-sm rounded-lg focus:ring-2 focus:ring-indigo-500 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-lg'
               />
             </div>
           )}
           <button
             type='submit'
-            className='w-full px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition-colors duration-300 transform hover:scale-105 font-semibold'
+            disabled={!isAuthServiceReady} // Disable button until auth service is ready
+            className={`w-full px-6 py-3 rounded-xl shadow-md transition-all duration-300 transform hover:scale-105 font-semibold text-lg
+              ${
+                isAuthServiceReady
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  : 'bg-gray-400 text-gray-700 cursor-not-allowed'
+              }`}
           >
             {type === 'login' ? 'Login' : 'Sign Up'}
           </button>
@@ -1857,7 +2114,14 @@ const AuthForm = ({ type, onAuth }) => {
 };
 
 // --- Flashcard Component ---
-const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
+const Flashcard = ({
+  card,
+  onDelete,
+  onEdit,
+  isReviewMode,
+  onReview,
+  viewMode,
+}) => {
   const [isFlipped, setIsFlipped] = useState(false);
 
   useEffect(() => {
@@ -1909,13 +2173,6 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
         icon: CalendarDays,
         colorClass: 'text-yellow-500 dark:text-yellow-400',
       };
-    } else if (cardDate.getTime() === dayAfterTomorrow.getTime()) {
-      return {
-        text: 'Day after tomorrow',
-        status: 'upcoming_soon',
-        icon: CalendarDays,
-        colorClass: 'text-yellow-500 dark:text-yellow-400',
-      };
     } else {
       return {
         text: date.toLocaleDateString('en-US', {
@@ -1937,18 +2194,38 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
     colorClass: reviewDateColorClass,
   } = formatNextReviewDate(card.nextReviewDate);
 
+  const cardBaseClasses =
+    'relative bg-white dark:bg-gray-700 rounded-xl shadow-md p-6 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] flex justify-between';
+  const cardHeightClass = 'min-h-[180px]'; // Default height for grid view
+
+  const cardListClasses = 'flex-row items-center p-4 min-h-[auto] !h-auto'; // Adjusted for list view
+  const cardGridClasses = 'flex-col ' + cardHeightClass; // Adjusted for grid view
+
   return (
     <div
-      className='relative bg-white dark:bg-gray-700 rounded-xl shadow-md p-6 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between'
+      className={`${cardBaseClasses} ${
+        viewMode === 'list' ? cardListClasses : cardGridClasses
+      }`}
       onClick={() => isReviewMode && setIsFlipped(!isFlipped)}
-      style={{ minHeight: '180px' }}
     >
       <div className='text-lg font-medium text-gray-900 dark:text-gray-100 flex-grow'>
         {isFlipped ? card.back : card.front}
+        {!isReviewMode && card.nextReviewDate && viewMode === 'list' && (
+          <div
+            className={`text-xs flex items-center mt-1 ${reviewDateColorClass}`}
+          >
+            {ReviewIcon && <ReviewIcon className='h-3 w-3 mr-1' />}
+            <span className='ml-1'>Next Review:</span> {reviewDateText}
+          </div>
+        )}
       </div>
 
       {!isReviewMode && (
-        <div className='absolute bottom-3 right-3 flex space-x-2'>
+        <div
+          className={`flex space-x-2 ${
+            viewMode === 'list' ? 'ml-auto' : 'absolute bottom-3 right-3'
+          }`}
+        >
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -2017,12 +2294,12 @@ const Flashcard = ({ card, onDelete, onEdit, isReviewMode, onReview }) => {
           Click to flip
         </div>
       )}
-      {!isReviewMode && card.nextReviewDate && (
+      {!isReviewMode && card.nextReviewDate && viewMode === 'grid' && (
         <div
           className={`absolute bottom-3 left-3 text-xs flex items-center ${reviewDateColorClass}`}
         >
           {ReviewIcon && <ReviewIcon className='h-3 w-3 mr-1' />}
-          Next Review: {reviewDateText}
+          <span className='ml-1'>Next Review:</span> {reviewDateText}
         </div>
       )}
     </div>
